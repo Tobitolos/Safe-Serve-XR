@@ -63,6 +63,7 @@ function init() {
     scene.add(counter);
 
 
+
     /* SPILL HAZARD */
 
     const spillGeometry = new THREE.CircleGeometry(0.5, 32);
@@ -73,6 +74,19 @@ function init() {
     spill.position.set(1, 0.01, -1);
 
     scene.add(spill);
+
+
+
+    /* MOP TOOL */
+
+    const mopGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.5);
+    const mopMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+
+    mop = new THREE.Mesh(mopGeometry, mopMaterial);
+    mop.position.set(-1, 0.75, -1);
+
+    scene.add(mop);
+
 
 
 /* ANIMATION LOOP */
