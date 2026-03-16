@@ -89,6 +89,35 @@ function init() {
 
 
 
+    /* TABLE */
+
+    const tableGeometry = new THREE.BoxGeometry(2, 0.2, 1);
+    const tableMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+
+    const table = new THREE.Mesh(tableGeometry, tableMaterial);
+    table.position.set(0, 0.6, -2);
+
+    scene.add(table);
+
+    /* TABLE LEGS */
+
+    const legGeometry = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+
+    const legPositions = [
+        [-0.9, 0.2, -2.4],
+        [0.9, 0.2, -2.4],
+        [-0.9, 0.2, -1.6],
+        [0.9, 0.2, -1.6],
+    ];
+
+    legPositions.forEach(([x, y, z]) => {
+        const leg = new THREE.Mesh(legGeometry, tableMaterial);
+        leg.position.set(x, y, z);
+        scene.add(leg);
+    });
+
+
+
 /* ANIMATION LOOP */
 
 function animate() {
