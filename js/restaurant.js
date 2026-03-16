@@ -118,10 +118,44 @@ function init() {
 
 
 
-    /* TRAINING FEEDBACK */
+    /* TRAINING FEEDBACK  */
 
     feedback.innerHTML = "Task: Clean the spill using the mop (Press C)";
 }
+
+
+/* CLEAN SPILL FUNCTION */
+
+function cleanSpill() {
+
+    const distance = mop.position.distanceTo(spill.position);
+
+    if (distance < 1) {
+
+        spill.material.color.set(0x00ff00); // spill turns green
+
+        feedback.innerHTML = "Good job! Spill cleaned safely.";
+
+    } else {
+
+        feedback.innerHTML = "Move the mop closer to the spill.";
+
+    }
+}
+
+
+/* KEYBOARD CONTROL */
+
+window.addEventListener("keydown", function(event) {
+
+    if (event.key === "c") {
+
+        cleanSpill();
+
+    }
+
+});
+
 
 
 /* ANIMATION LOOP */
