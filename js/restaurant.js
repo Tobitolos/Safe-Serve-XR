@@ -63,6 +63,18 @@ function init() {
     scene.add(counter);
 
 
+    /* SPILL HAZARD */
+
+    const spillGeometry = new THREE.CircleGeometry(0.5, 32);
+    const spillMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+
+    spill = new THREE.Mesh(spillGeometry, spillMaterial);
+    spill.rotation.x = -Math.PI / 2;
+    spill.position.set(1, 0.01, -1);
+
+    scene.add(spill);
+
+
 /* ANIMATION LOOP */
 
 function animate() {
