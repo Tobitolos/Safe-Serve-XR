@@ -25,6 +25,7 @@ function init() {
     );
 
     camera.position.set(0, 1.6, 4);
+    camera.lookAt(0, 0, -2);   // ← ADDED so you can see the scene
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -132,7 +133,7 @@ function cleanSpill() {
 
     if (distance < 1) {
 
-        spill.material.color.set(0x00ff00); // spill turns green
+        spill.material.color.set(0x00ff00);
 
         feedback.innerHTML = "Good job! Spill cleaned safely.";
 
@@ -157,7 +158,6 @@ window.addEventListener("keydown", function(event) {
 });
 
 
-
 /* ANIMATION LOOP */
 
 function animate() {
@@ -170,4 +170,4 @@ function render() {
 
     renderer.render(scene, camera);
 
-}
+}c
