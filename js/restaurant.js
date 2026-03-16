@@ -118,6 +118,12 @@ function init() {
 
 
 
+    /* TRAINING FEEDBACK */
+
+    feedback.innerHTML = "Task: Clean the spill using the mop (Press C)";
+}
+
+
 /* ANIMATION LOOP */
 
 function animate() {
