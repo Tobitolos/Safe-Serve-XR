@@ -51,6 +51,18 @@ function init() {
     scene.add(floor);
 
 
+
+    /* RESTAURANT COUNTER */
+
+    const counterGeometry = new THREE.BoxGeometry(3, 1, 1);
+    const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+
+    const counter = new THREE.Mesh(counterGeometry, counterMaterial);
+    counter.position.set(0, 0.5, -3);
+
+    scene.add(counter);
+
+
 /* ANIMATION LOOP */
 
 function animate() {
