@@ -36,7 +36,7 @@ function init() {
 
     /* LIGHT */
 
-    const light = new THREE.HemisphereLight(0xffffff, 0x444444);
+    const light = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
     scene.add(light);
 
 
@@ -68,11 +68,14 @@ function init() {
     /* SPILL HAZARD */
 
     const spillGeometry = new THREE.CircleGeometry(0.5, 32);
-    const spillMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+    const spillMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xff0000
+    });
 
     spill = new THREE.Mesh(spillGeometry, spillMaterial);
     spill.rotation.x = -Math.PI / 2;
-    spill.position.set(1, 0.01, -1);
+    spill.position.set(0.8, 0.01, -1);
 
     scene.add(spill);
 
@@ -84,7 +87,9 @@ function init() {
     const mopMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
 
     mop = new THREE.Mesh(mopGeometry, mopMaterial);
-    mop.position.set(-1, 0.75, -1);
+
+    // moved closer so cleaning works
+    mop.position.set(0.5, 0.75, -1);
 
     scene.add(mop);
 
@@ -133,7 +138,7 @@ function cleanSpill() {
 
     if (distance < 1) {
 
-        scene.remove(spill);   // spill disappears
+        scene.remove(spill);
 
         feedback.innerHTML = "Good job! Spill cleaned safely.";
 
