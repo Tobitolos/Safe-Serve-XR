@@ -25,7 +25,7 @@ function init() {
     );
 
     camera.position.set(0, 1.6, 4);
-    camera.lookAt(0, 0, -2);   // ← ADDED so you can see the scene
+    camera.lookAt(0, 0, -2);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -68,7 +68,7 @@ function init() {
     /* SPILL HAZARD */
 
     const spillGeometry = new THREE.CircleGeometry(0.5, 32);
-    const spillMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+    const spillMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
     spill = new THREE.Mesh(spillGeometry, spillMaterial);
     spill.rotation.x = -Math.PI / 2;
@@ -133,7 +133,7 @@ function cleanSpill() {
 
     if (distance < 1) {
 
-        spill.material.color.set(0x00ff00);
+        scene.remove(spill);   // spill disappears
 
         feedback.innerHTML = "Good job! Spill cleaned safely.";
 
@@ -170,4 +170,4 @@ function render() {
 
     renderer.render(scene, camera);
 
-}c
+}
