@@ -108,8 +108,42 @@ let guestPanelOpened = false;
 
 let mouseThing = null;
 
+const guestByTable = [];
+const clock = new THREE.Clock();
+let guestJumpAnim = null;
+
 init();
 animate();
+
+function startGuestJump(guestGroup) {
+    if (!guestGroup) {
+        return;
+    }
+    if (guestJumpAnim) {
+        guestJumpAnim.guest.position.y = guestJumpAnim.baseY;
+    }
+    guestJumpAnim = {
+        guest: guestGroup,
+        baseY: guestGroup.position.y,
+        elapsed: 0,
+        duration: 0.6,
+        height: 0.42,
+    };
+}
+
+function updateGuestJump(dt) {
+    if (!guestJumpAnim) {
+        return;
+    }
+    guestJumpAnim.elapsed += dt;
+    const t = Math.min(1, guestJumpAnim.elapsed / guestJumpAnim.duration);
+    const h = guestJumpAnim.height;
+    guestJumpAnim.guest.position.y = guestJumpAnim.baseY + 4 * h * t * (1 - t);
+    if (t >= 1) {
+        guestJumpAnim.guest.position.y = guestJumpAnim.baseY;
+        guestJumpAnim = null;
+    }
+}
 
 function buildTable(tx, tz, woodMat) {
     const top = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 1), woodMat);
@@ -148,6 +182,7 @@ function buildGuest(gx, gz, shirtColor, skinColor) {
     guest.add(body);
     guest.add(head);
     scene.add(guest);
+    return guest;
 }
 
 function handsOnDone() {
@@ -297,11 +332,12 @@ function init() {
 
     buildTable(3.2, 0.6, wood);
 
-    /* Guests */
+    /* Guests (table 2 pink guest jumps when you pick the best answer there) */
 
-    buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896);
-    buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574);
-    buildGuest(4.05, 0.85, 0x228866, 0xc9a686);
+    guestByTable.length = 0;
+    guestByTable.push(buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896));
+    guestByTable.push(buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574));
+    guestByTable.push(buildGuest(4.05, 0.85, 0x228866, 0xc9a686));
 
     /* VR CONTROLLERS, grab mop or plate */
 
@@ -330,7 +366,7 @@ function init() {
         "<strong>SafeServe XR</strong><br>" +
         "1) Grab the <strong>mop</strong>, wipe the spill, release.<br>" +
         "2) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> (center table).<br>" +
-        "3) Help <strong>three guests</strong> (blue = table 1, pink = table 2, green = table 3) in the panel, top right.<br>" +
+        "3) Help <strong>three guests</strong> (blue = table 1, pink = table 2, green = table 3) in the panel, top right. The <strong>pink guest</strong> jumps when you pick the best reply at table 2.<br>" +
         "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong>.";
 }
 
@@ -366,6 +402,10 @@ function loadScenario(index) {
             const kids = dialogueButtons.children;
             for (let j = 0; j < kids.length; j++) {
                 kids[j].disabled = true;
+            }
+
+            if (choice.ok && idx === 1 && guestByTable[1]) {
+                startGuestJump(guestByTable[1]);
             }
 
             if (idx < SCENARIOS.length - 1) {
@@ -710,6 +750,8 @@ function render() {
     if (spill && mouseThing === mop && mopNearSpill(0.95)) {
         tryCompleteSpill();
     }
+
+    updateGuestJump(clock.getDelta());
 
     renderer.render(scene, camera);
 
