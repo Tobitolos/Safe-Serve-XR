@@ -91,3 +91,17 @@ min-height:1.2em;
 .dialogue-footer{
 margin-top:10px;
 }
+
+.dialogue-footer button{
+font:inherit;
+padding:8px 12px;
+border-radius:6px;
+border:1px solid #3355aa;
+background:#eef2ff;
+cursor:pointer;
+width:100%;
+}
+
+.dialogue-footer button:hover{
+background:#dde4ff;
+}
