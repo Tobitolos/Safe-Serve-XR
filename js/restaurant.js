@@ -4,10 +4,10 @@ import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js
 // Guest dialogue — table 1 only (wrong order scenario)
 const SCENARIO_TABLE_1 = {
     prompt:
-        "“Excuse me — I don't think this is what I ordered. What should you say?”",
+        "“Excuse me, I don't think this is what I ordered. What should you say?”",
     choices: [
         {
-            label: "“Not my problem — ask someone else.”",
+            label: "“Not my problem, ask someone else.”",
             ok: false,
             note: "Too dismissive. Stay polite and take ownership, even if you get help after.",
         },
@@ -15,7 +15,7 @@ const SCENARIO_TABLE_1 = {
             label:
                 "“I'm sorry about the mix-up. I'll check with the kitchen and get you the right dish.”",
             ok: true,
-            note: "Good — you apologize, verify with the kitchen, and fix the problem.",
+            note: "Good, you apologize, verify with the kitchen, and fix the problem.",
         },
         {
             label: "“Are you sure you ordered the right thing?”",
