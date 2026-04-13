@@ -1,7 +1,7 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/VRButton.js";
 
-// Guest dialogues, table 1 (wrong order), table 2 (allergy)
+// Guest dialogues, table 1 wrong order, table 2 allergy, table 3 wait and cold food
 const SCENARIOS = [
     {
         prompt:
@@ -47,9 +47,31 @@ const SCENARIOS = [
             },
         ],
     },
+    {
+        prompt:
+            "Table 3, “We've been waiting a long time and the soup is cold. What do you say?”",
+        choices: [
+            {
+                label: "“Well, we're really busy tonight.”",
+                ok: false,
+                note: "Sounds like an excuse. Acknowledge the wait and heat or replace the food.",
+            },
+            {
+                label:
+                    "“I'm sorry for the wait and that it's cold. I'll get this reheated or replaced for you.”",
+                ok: true,
+                note: "Good, you apologize and offer a clear fix.",
+            },
+            {
+                label: "“It's supposed to be lukewarm.”",
+                ok: false,
+                note: "Arguing makes it worse. Listen and fix the issue politely.",
+            },
+        ],
+    },
 ];
 
-const GUEST_TALK_COUNT = 2;
+const GUEST_TALK_COUNT = 3;
 
 let scene, camera, renderer;
 let mop;
@@ -81,7 +103,7 @@ let heldObject = null;
 
 let spillDone = false;
 let serveDone = false;
-const scenarioDone = [false, false];
+const scenarioDone = [false, false, false];
 let guestPanelOpened = false;
 
 let mouseThing = null;
@@ -133,7 +155,7 @@ function handsOnDone() {
 }
 
 function allTalksDone() {
-    return scenarioDone[0] && scenarioDone[1];
+    return scenarioDone[0] && scenarioDone[1] && scenarioDone[2];
 }
 
 function allTrainingDone() {
@@ -271,10 +293,15 @@ function init() {
 
     buildTable(-3.2, 0.6, wood);
 
+    /* TABLE 3 */
+
+    buildTable(3.2, 0.6, wood);
+
     /* Guests */
 
     buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896);
     buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574);
+    buildGuest(4.05, 0.85, 0x228866, 0xc9a686);
 
     /* VR CONTROLLERS, grab mop or plate */
 
@@ -303,7 +330,7 @@ function init() {
         "<strong>SafeServe XR</strong><br>" +
         "1) Grab the <strong>mop</strong>, wipe the spill, release.<br>" +
         "2) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> (center table).<br>" +
-        "3) Help <strong>two guests</strong> (blue = table 1, pink = table 2) in the panel, top right.<br>" +
+        "3) Help <strong>three guests</strong> (blue = table 1, pink = table 2, green = table 3) in the panel, top right.<br>" +
         "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong>.";
 }
 
@@ -341,24 +368,29 @@ function loadScenario(index) {
                 kids[j].disabled = true;
             }
 
-            if (idx === 0) {
+            if (idx < SCENARIOS.length - 1) {
                 const nextBtn = document.createElement("button");
                 nextBtn.type = "button";
-                nextBtn.textContent = "Next customer (table 2)";
+                nextBtn.textContent = "Next customer (table " + (idx + 2) + ")";
                 nextBtn.addEventListener("click", function () {
                     dialogueFooter.innerHTML = "";
-                    loadScenario(1);
+                    loadScenario(idx + 1);
                 });
                 dialogueFooter.appendChild(nextBtn);
-                feedback.innerHTML =
-                    "Table 1 done. Click <strong>Next customer</strong> for the guest at table 2 (pink shirt).";
+                if (idx === 0) {
+                    feedback.innerHTML =
+                        "Table 1 done. Click <strong>Next customer</strong> for table 2 (pink shirt).";
+                } else {
+                    feedback.innerHTML =
+                        "Table 2 done. Click <strong>Next customer</strong> for table 3 (green shirt).";
+                }
             } else {
                 const p = document.createElement("p");
                 p.style.margin = "0";
-                p.textContent = "You helped both tables.";
+                p.textContent = "You helped all three tables.";
                 dialogueFooter.appendChild(p);
                 feedback.innerHTML =
-                    "Training complete, spill, serve, and both guest talks. Great work!";
+                    "Training complete, spill, serve, and all guest talks. Great work!";
             }
         });
         dialogueButtons.appendChild(btn);
@@ -373,7 +405,7 @@ function maybeOpenGuestTalk() {
     dialoguePanel.classList.remove("hidden");
     loadScenario(0);
     feedback.innerHTML =
-        "Mop and plate tasks done. Answer <strong>Guest, table 1</strong>, then use <strong>Next customer</strong> for table 2.";
+        "Mop and plate tasks done. Answer <strong>Guest, table 1</strong>, then use <strong>Next customer</strong> for tables 2 and 3.";
 }
 
 function grabList() {
@@ -389,14 +421,15 @@ function drawChecklist() {
     const v = serveDone ? "Done" : "To do";
     let gLine;
     if (allTalksDone()) {
-        gLine = "Done (2/2)";
+        gLine = "Done (3/3)";
     } else if (!handsOnDone()) {
         gLine = "Locked (finish spill + serve)";
     } else {
-        gLine = "To do (" + countTalksDone() + "/2)";
+        gLine = "To do (" + countTalksDone() + "/3)";
     }
     const t1 = scenarioDone[0] ? "Done" : "To do";
     const t2 = scenarioDone[1] ? "Done" : "To do";
+    const t3 = scenarioDone[2] ? "Done" : "To do";
     tasksEl.innerHTML =
         "<strong>Training checklist</strong><br>Clean spill: " +
         s +
@@ -408,6 +441,8 @@ function drawChecklist() {
         t1 +
         " · Table 2: " +
         t2 +
+        " · Table 3: " +
+        t3 +
         "</small>";
 }
 
@@ -507,10 +542,10 @@ function tryCompleteSpill() {
         maybeOpenGuestTalk();
         if (allTrainingDone()) {
             feedback.innerHTML =
-                "Training complete, spill, serve, and both guest talks. Great work!";
+                "Training complete, spill, serve, and all guest talks. Great work!";
         } else if (serveDone && !allTalksDone()) {
             feedback.innerHTML =
-                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then table 2.";
+                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
         } else {
             feedback.innerHTML =
                 "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
@@ -537,10 +572,10 @@ function cleanSpill() {
 
         if (allTrainingDone()) {
             feedback.innerHTML =
-                "Training complete, spill, serve, and both guest talks. Great work!";
+                "Training complete, spill, serve, and all guest talks. Great work!";
         } else if (serveDone && !allTalksDone()) {
             feedback.innerHTML =
-                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then table 2.";
+                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
         } else {
             feedback.innerHTML =
                 "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
@@ -586,10 +621,10 @@ function checkPlateServe() {
 
     if (allTrainingDone()) {
         feedback.innerHTML =
-            "Training complete, spill, serve, and both guest talks. Great work!";
+            "Training complete, spill, serve, and all guest talks. Great work!";
     } else if (spillDone && !allTalksDone()) {
         feedback.innerHTML =
-            "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then table 2.";
+            "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
     } else {
         feedback.innerHTML =
             "Nice, food is on the table. When you can, clean the spill with the mop.";
