@@ -7,6 +7,13 @@ let spill;
 
 const feedback = document.getElementById("feedback");
 
+const raycaster = new THREE.Raycaster();
+const rotationMatrix = new THREE.Matrix4();
+const worldMop = new THREE.Vector3();
+const worldSpill = new THREE.Vector3();
+
+let grabbingController = null;
+
 init();
 animate();
 
@@ -33,6 +40,8 @@ function init() {
 
     document.body.appendChild(renderer.domElement);
     document.body.appendChild(VRButton.createButton(renderer));
+
+    window.addEventListener("resize", onWindowResize);
 
     /* LIGHT */
 
@@ -69,7 +78,7 @@ function init() {
 
     const spillGeometry = new THREE.CircleGeometry(0.5, 32);
 
-    const spillMaterial = new THREE.MeshStandardMaterial({ 
+    const spillMaterial = new THREE.MeshStandardMaterial({
         color: 0xff0000
     });
 
@@ -122,11 +131,85 @@ function init() {
         scene.add(leg);
     });
 
+    /* VR CONTROLLERS — point at mop, hold trigger to grab */
 
+    for (let i = 0; i < 2; i++) {
+        const controller = renderer.xr.getController(i);
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -4),
+        ]);
+        controller.add(new THREE.Line(lineGeo));
+        controller.addEventListener("selectstart", onSelectStart);
+        controller.addEventListener("selectend", onSelectEnd);
+        scene.add(controller);
+    }
 
     /* TRAINING FEEDBACK  */
 
-    feedback.innerHTML = "Task: Clean the spill using the mop (Press C)";
+    feedback.innerHTML =
+        "Task: Point at the mop, hold trigger to grab, wipe the spill, release. Desktop: <strong>C</strong> when the mop is over the spill.";
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function controllerRay(controller) {
+    rotationMatrix.extractRotation(controller.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotationMatrix);
+}
+
+function onSelectStart(event) {
+    const controller = event.target;
+    if (grabbingController) {
+        return;
+    }
+
+    controllerRay(controller);
+    const hits = raycaster.intersectObject(mop, false);
+    if (hits.length > 0) {
+        controller.attach(mop);
+        grabbingController = controller;
+        feedback.innerHTML = "Mop in hand — wipe over the spill, then release the trigger.";
+    }
+}
+
+function onSelectEnd(event) {
+    const controller = event.target;
+    if (controller !== grabbingController) {
+        return;
+    }
+    scene.attach(mop);
+    grabbingController = null;
+    if (!spill) {
+        return;
+    }
+    feedback.innerHTML =
+        "Grab the mop again if needed, or press <strong>C</strong> on desktop when the mop is over the spill.";
+}
+
+function mopNearSpill(threshold) {
+    if (!spill) {
+        return false;
+    }
+    mop.getWorldPosition(worldMop);
+    spill.getWorldPosition(worldSpill);
+    return worldMop.distanceTo(worldSpill) < threshold;
+}
+
+function tryCompleteSpill() {
+    if (!spill) {
+        return;
+    }
+    if (mopNearSpill(0.95)) {
+        scene.remove(spill);
+        spill = null;
+        feedback.innerHTML = "Good job! Spill cleaned safely.";
+    }
 }
 
 
@@ -134,11 +217,14 @@ function init() {
 
 function cleanSpill() {
 
-    const distance = mop.position.distanceTo(spill.position);
+    if (!spill) {
+        return;
+    }
 
-    if (distance < 1) {
+    if (mopNearSpill(1)) {
 
         scene.remove(spill);
+        spill = null;
 
         feedback.innerHTML = "Good job! Spill cleaned safely.";
 
@@ -147,6 +233,7 @@ function cleanSpill() {
         feedback.innerHTML = "Move the mop closer to the spill.";
 
     }
+
 }
 
 
@@ -172,6 +259,10 @@ function animate() {
 }
 
 function render() {
+
+    if (spill && grabbingController && mopNearSpill(0.95)) {
+        tryCompleteSpill();
+    }
 
     renderer.render(scene, camera);
 
