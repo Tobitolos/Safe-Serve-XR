@@ -5,7 +5,7 @@ import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js
 const SCENARIOS = [
     {
         prompt:
-            "Table 1, “Excuse me, I don't think this is what I ordered. What should you say?”",
+            "Table 1, “Sorry, I spilled my drink on the floor over here. Could you help clean it up before someone slips? Also, I don't think this is the food I ordered. What should you say?”",
         choices: [
             {
                 label: "“Not my problem, ask someone else.”",
@@ -14,9 +14,9 @@ const SCENARIOS = [
             },
             {
                 label:
-                    "“I'm sorry about the mix-up. I'll check with the kitchen and get you the right dish.”",
+                    "“I'm sorry about the spill and the mix-up. I'll get the floor dealt with so it's safe, and I'll check with the kitchen about your dish.”",
                 ok: true,
-                note: "Good, you apologize, verify with the kitchen, and fix the problem.",
+                note: "Good, you address the safety issue first, then the wrong order, calmly.",
             },
             {
                 label: "“Are you sure you ordered the right thing?”",
@@ -73,10 +73,14 @@ const SCENARIOS = [
 
 const GUEST_TALK_COUNT = 3;
 
+const MOP_SHAFT_LEN = 1.75;
+const MOP_HANDLE_CENTER_Y = MOP_SHAFT_LEN / 2 + 0.04;
+
 let scene, camera, renderer;
 let mop;
 let spill;
 let plate;
+let table3Plate;
 
 const feedback = document.getElementById("feedback");
 const tasksEl = document.getElementById("tasks");
@@ -105,7 +109,6 @@ let spillDone = false;
 let serveDone = false;
 const scenarioDone = [false, false, false];
 let guestPanelOpened = false;
-
 let mouseThing = null;
 
 const guestByTable = [];
@@ -185,8 +188,8 @@ function buildGuest(gx, gz, shirtColor, skinColor) {
     return guest;
 }
 
-function handsOnDone() {
-    return spillDone && serveDone;
+function mopIsAvailable() {
+    return !!spill && scenarioDone[0];
 }
 
 function allTalksDone() {
@@ -280,15 +283,25 @@ function init() {
 
 
 
-    /* MOP TOOL */
+    /* MOP: thick yellow shaft only (easy to ray-hit in VR); origin at shaft center */
 
-    const mopGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.5);
-    const mopMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+    mop = new THREE.Group();
 
-    mop = new THREE.Mesh(mopGeometry, mopMaterial);
+    const shaftLen = MOP_SHAFT_LEN;
+    const shaftGeo = new THREE.CylinderGeometry(0.12, 0.14, shaftLen, 16);
+    const shaftMat = new THREE.MeshStandardMaterial({
+        color: 0xffee44,
+        emissive: 0xcc9900,
+        emissiveIntensity: 0.55,
+        roughness: 0.4,
+    });
+    const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+    shaft.userData.grabRoot = mop;
 
-    // moved closer so cleaning works
-    mop.position.set(0.5, 0.75, -1);
+    mop.add(shaft);
+
+    /* By the service counter, near table 1 / first guest (counter center z -3, table z -2) */
+    mop.position.set(1.35, MOP_HANDLE_CENTER_Y, -2.28);
 
     scene.add(mop);
 
@@ -332,6 +345,15 @@ function init() {
 
     buildTable(3.2, 0.6, wood);
 
+    /* Plate on table 3 (set dressing, not grabbable) */
+    table3Plate = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.22, 0.22, 0.04, 32),
+        new THREE.MeshStandardMaterial({ color: 0xf5f5f0 })
+    );
+    table3Plate.position.set(3.65, 0.72, 0.72);
+    table3Plate.rotation.y = 0.15;
+    scene.add(table3Plate);
+
     /* Guests (table 2 pink guest jumps when you pick the best answer there) */
 
     guestByTable.length = 0;
@@ -364,10 +386,10 @@ function init() {
     drawChecklist();
     feedback.innerHTML =
         "<strong>SafeServe XR</strong><br>" +
-        "1) Grab the <strong>mop</strong>, wipe the spill, release.<br>" +
-        "2) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> (center table).<br>" +
-        "3) Help <strong>three guests</strong> (blue = table 1, pink = table 2, green = table 3) in the panel, top right. The <strong>pink guest</strong> jumps when you pick the best reply at table 2.<br>" +
-        "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong>.";
+        "1) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> (center table).<br>" +
+        "2) Use the <strong>Guest</strong> panel (top right) for <strong>table 1</strong> (blue shirt), then clean the <strong>spill</strong> with the <strong>mop</strong> by the counter.<br>" +
+        "3) In the Guest panel, <strong>Next customer</strong> for tables 2 and 3 (pink jumps on the best allergy answer at table 2).<br>" +
+        "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong> when the mop is over the spill.";
 }
 
 function loadScenario(index) {
@@ -413,13 +435,18 @@ function loadScenario(index) {
                 nextBtn.type = "button";
                 nextBtn.textContent = "Next customer (table " + (idx + 2) + ")";
                 nextBtn.addEventListener("click", function () {
+                    if (idx === 0 && !spillDone) {
+                        feedback.innerHTML =
+                            "Clean the <strong>spill</strong> with the mop first, then tap <strong>Next customer</strong> again for table 2.";
+                        return;
+                    }
                     dialogueFooter.innerHTML = "";
                     loadScenario(idx + 1);
                 });
                 dialogueFooter.appendChild(nextBtn);
                 if (idx === 0) {
                     feedback.innerHTML =
-                        "Table 1 done. Click <strong>Next customer</strong> for table 2 (pink shirt).";
+                        "Table 1 done. Clean the <strong>spill</strong> with the mop, then tap <strong>Next customer</strong> for table 2 (pink shirt).";
                 } else {
                     feedback.innerHTML =
                         "Table 2 done. Click <strong>Next customer</strong> for table 3 (green shirt).";
@@ -430,7 +457,7 @@ function loadScenario(index) {
                 p.textContent = "You helped all three tables.";
                 dialogueFooter.appendChild(p);
                 feedback.innerHTML =
-                    "Training complete, spill, serve, and all guest talks. Great work!";
+                    "Training complete, serve, guest talks, and spill cleanup. Great work!";
             }
         });
         dialogueButtons.appendChild(btn);
@@ -438,18 +465,21 @@ function loadScenario(index) {
 }
 
 function maybeOpenGuestTalk() {
-    if (!handsOnDone() || allTalksDone() || guestPanelOpened) {
+    if (!serveDone || allTalksDone() || guestPanelOpened) {
         return;
     }
     guestPanelOpened = true;
     dialoguePanel.classList.remove("hidden");
     loadScenario(0);
     feedback.innerHTML =
-        "Mop and plate tasks done. Answer <strong>Guest, table 1</strong>, then use <strong>Next customer</strong> for tables 2 and 3.";
+        "Answer <strong>Guest, table 1</strong>, then clean the <strong>spill</strong> with the mop. After that, use <strong>Next customer</strong> for tables 2 and 3.";
 }
 
 function grabList() {
-    const list = [mop];
+    const list = [];
+    if (mopIsAvailable()) {
+        list.push(mop);
+    }
     if (plate.userData.canGrab) {
         list.push(plate);
     }
@@ -457,13 +487,22 @@ function grabList() {
 }
 
 function drawChecklist() {
-    const s = spillDone ? "Done" : "To do";
+    let s;
+    if (spillDone) {
+        s = "Done";
+    } else if (!serveDone) {
+        s = "Locked (serve first)";
+    } else if (!scenarioDone[0]) {
+        s = "Locked (guest, table 1 first)";
+    } else {
+        s = "To do";
+    }
     const v = serveDone ? "Done" : "To do";
     let gLine;
     if (allTalksDone()) {
         gLine = "Done (3/3)";
-    } else if (!handsOnDone()) {
-        gLine = "Locked (finish spill + serve)";
+    } else if (!serveDone) {
+        gLine = "Locked (serve first)";
     } else {
         gLine = "To do (" + countTalksDone() + "/3)";
     }
@@ -471,10 +510,10 @@ function drawChecklist() {
     const t2 = scenarioDone[1] ? "Done" : "To do";
     const t3 = scenarioDone[2] ? "Done" : "To do";
     tasksEl.innerHTML =
-        "<strong>Training checklist</strong><br>Clean spill: " +
-        s +
-        "<br>Serve (center table): " +
+        "<strong>Training checklist</strong><br>Serve (center table): " +
         v +
+        "<br>Clean spill: " +
+        s +
         "<br>Guest talks: " +
         gLine +
         "<br><small>Table 1: " +
@@ -505,13 +544,13 @@ function onSelectStart(event) {
     }
 
     controllerRay(controller);
-    const hits = raycaster.intersectObjects(grabList(), false);
+    const hits = raycaster.intersectObjects(grabList(), true);
     hits.sort((a, b) => a.distance - b.distance);
     if (hits.length === 0) {
         return;
     }
 
-    const obj = hits[0].object;
+    const obj = hits[0].object.userData.grabRoot ?? hits[0].object;
     controller.attach(obj);
     heldObject = obj;
     grabbingController = controller;
@@ -538,16 +577,11 @@ function onSelectEnd(event) {
         if (!spill) {
             if (allTrainingDone()) {
                 feedback.innerHTML = "Training complete, great work!";
-            } else if (handsOnDone() && !allTalksDone()) {
-                maybeOpenGuestTalk();
+            } else if (!allTalksDone()) {
                 feedback.innerHTML =
-                    "Spill cleared. Use the <strong>Guest</strong> panel (top right).";
-            } else if (serveDone) {
-                feedback.innerHTML =
-                    "Spill cleared! Finish the <strong>Guest</strong> panel if you have not yet.";
+                    "Spill cleared. In the <strong>Guest</strong> panel, tap <strong>Next customer</strong> for table 2 when you are ready.";
             } else {
-                feedback.innerHTML =
-                    "Spill cleared! Next: grab the <strong>plate</strong> onto the <strong>green mat</strong>.";
+                feedback.innerHTML = "Spill cleared.";
             }
             return;
         }
@@ -579,16 +613,14 @@ function tryCompleteSpill() {
         spill = null;
         spillDone = true;
         drawChecklist();
-        maybeOpenGuestTalk();
         if (allTrainingDone()) {
             feedback.innerHTML =
-                "Training complete, spill, serve, and all guest talks. Great work!";
-        } else if (serveDone && !allTalksDone()) {
+                "Training complete, serve, guest talks, and spill cleanup. Great work!";
+        } else if (!allTalksDone()) {
             feedback.innerHTML =
-                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
+                "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
         } else {
-            feedback.innerHTML =
-                "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
+            feedback.innerHTML = "Good job! Spill cleaned safely.";
         }
     }
 }
@@ -602,23 +634,27 @@ function cleanSpill() {
         return;
     }
 
+    if (!scenarioDone[0]) {
+        feedback.innerHTML =
+            "Finish <strong>Guest, table 1</strong> in the panel first, then you can clean the spill.";
+        return;
+    }
+
     if (mopNearSpill(1)) {
 
         scene.remove(spill);
         spill = null;
         spillDone = true;
         drawChecklist();
-        maybeOpenGuestTalk();
 
         if (allTrainingDone()) {
             feedback.innerHTML =
-                "Training complete, spill, serve, and all guest talks. Great work!";
-        } else if (serveDone && !allTalksDone()) {
+                "Training complete, serve, guest talks, and spill cleanup. Great work!";
+        } else if (!allTalksDone()) {
             feedback.innerHTML =
-                "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
+                "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
         } else {
-            feedback.innerHTML =
-                "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
+            feedback.innerHTML = "Good job! Spill cleaned safely.";
         }
 
     } else {
@@ -661,13 +697,10 @@ function checkPlateServe() {
 
     if (allTrainingDone()) {
         feedback.innerHTML =
-            "Training complete, spill, serve, and all guest talks. Great work!";
-    } else if (spillDone && !allTalksDone()) {
-        feedback.innerHTML =
-            "Spill and serve done. Use the <strong>Guest</strong> panel, table 1, then tables 2 and 3.";
+            "Training complete, serve, guest talks, and spill cleanup. Great work!";
     } else {
         feedback.innerHTML =
-            "Nice, food is on the table. When you can, clean the spill with the mop.";
+            "Food is on the table. Answer <strong>Guest, table 1</strong> in the panel (top right), then clean the <strong>spill</strong> with the mop.";
     }
 }
 
@@ -679,9 +712,9 @@ function onCanvasPointerDown(event) {
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(grabList(), false);
+    const hits = raycaster.intersectObjects(grabList(), true);
     if (hits.length > 0) {
-        mouseThing = hits[0].object;
+        mouseThing = hits[0].object.userData.grabRoot ?? hits[0].object;
         renderer.domElement.setPointerCapture(event.pointerId);
     }
 }
@@ -700,7 +733,7 @@ function onCanvasPointerMove(event) {
             const y = dragPoint.z < -2.35 ? 1.02 : 0.72;
             mouseThing.position.set(dragPoint.x, y, dragPoint.z);
         } else {
-            mouseThing.position.set(dragPoint.x, 0.85, dragPoint.z);
+            mouseThing.position.set(dragPoint.x, MOP_HANDLE_CENTER_Y, dragPoint.z);
         }
     }
 }
