@@ -4,15 +4,29 @@ import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js
 let scene, camera, renderer;
 let mop;
 let spill;
+let plate;
 
 const feedback = document.getElementById("feedback");
+const tasksEl = document.getElementById("tasks");
 
 const raycaster = new THREE.Raycaster();
 const rotationMatrix = new THREE.Matrix4();
 const worldMop = new THREE.Vector3();
 const worldSpill = new THREE.Vector3();
+const worldPlate = new THREE.Vector3();
+const mouse = new THREE.Vector2();
+const dragPoint = new THREE.Vector3();
+
+const planeCounter = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1);
+const planeTable = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.72);
 
 let grabbingController = null;
+let heldObject = null;
+
+let spillDone = false;
+let serveDone = false;
+
+let mouseThing = null;
 
 init();
 animate();
@@ -104,6 +118,18 @@ function init() {
 
 
 
+    /* PLATE (pick up from counter, place on green mat) */
+
+    const plateGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.04, 32);
+    const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xf5f5f0 });
+
+    plate = new THREE.Mesh(plateGeometry, plateMaterial);
+    plate.position.set(-0.75, 1.02, -2.85);
+    plate.userData.canGrab = true;
+    scene.add(plate);
+
+
+
     /* TABLE */
 
     const tableGeometry = new THREE.BoxGeometry(2, 0.2, 1);
@@ -113,6 +139,20 @@ function init() {
     table.position.set(0, 0.6, -2);
 
     scene.add(table);
+
+    /* GREEN PLACEMAT — target zone for the plate */
+
+    const matGeometry = new THREE.PlaneGeometry(0.6, 0.5);
+    const matMaterial = new THREE.MeshBasicMaterial({
+        color: 0x44aa66,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.DoubleSide,
+    });
+    const placemat = new THREE.Mesh(matGeometry, matMaterial);
+    placemat.rotation.x = -Math.PI / 2;
+    placemat.position.set(0.35, 0.701, -2.05);
+    scene.add(placemat);
 
     /* TABLE LEGS */
 
@@ -131,7 +171,7 @@ function init() {
         scene.add(leg);
     });
 
-    /* VR CONTROLLERS — point at mop, hold trigger to grab */
+    /* VR CONTROLLERS — grab mop or plate */
 
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
@@ -145,10 +185,38 @@ function init() {
         scene.add(controller);
     }
 
-    /* TRAINING FEEDBACK  */
+    /* MOUSE DRAG (desktop only, when not in VR) */
 
+    const canvas = renderer.domElement;
+    canvas.addEventListener("pointerdown", onCanvasPointerDown);
+    canvas.addEventListener("pointermove", onCanvasPointerMove);
+    canvas.addEventListener("pointerup", onCanvasPointerUp);
+    canvas.addEventListener("pointercancel", onCanvasPointerUp);
+
+    drawChecklist();
     feedback.innerHTML =
-        "Task: Point at the mop, hold trigger to grab, wipe the spill, release. Desktop: <strong>C</strong> when the mop is over the spill.";
+        "<strong>SafeServe XR</strong><br>" +
+        "1) Grab the <strong>mop</strong>, wipe the spill, release.<br>" +
+        "2) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong>.<br>" +
+        "VR: trigger to grab/release. Desktop: click-drag; spill: <strong>C</strong>.";
+}
+
+function grabList() {
+    const list = [mop];
+    if (plate.userData.canGrab) {
+        list.push(plate);
+    }
+    return list;
+}
+
+function drawChecklist() {
+    const s = spillDone ? "Done" : "To do";
+    const v = serveDone ? "Done" : "To do";
+    tasksEl.innerHTML =
+        "<strong>Training checklist</strong><br>Clean spill: " +
+        s +
+        "<br>Serve guest: " +
+        v;
 }
 
 function onWindowResize() {
@@ -165,31 +233,58 @@ function controllerRay(controller) {
 
 function onSelectStart(event) {
     const controller = event.target;
-    if (grabbingController) {
+    if (grabbingController || mouseThing) {
         return;
     }
 
     controllerRay(controller);
-    const hits = raycaster.intersectObject(mop, false);
-    if (hits.length > 0) {
-        controller.attach(mop);
-        grabbingController = controller;
+    const hits = raycaster.intersectObjects(grabList(), false);
+    hits.sort((a, b) => a.distance - b.distance);
+    if (hits.length === 0) {
+        return;
+    }
+
+    const obj = hits[0].object;
+    controller.attach(obj);
+    heldObject = obj;
+    grabbingController = controller;
+
+    if (obj === mop) {
         feedback.innerHTML = "Mop in hand — wipe over the spill, then release the trigger.";
+    } else {
+        feedback.innerHTML = "Plate in hand — place it on the green mat, then release.";
     }
 }
 
 function onSelectEnd(event) {
     const controller = event.target;
-    if (controller !== grabbingController) {
+    if (controller !== grabbingController || !heldObject) {
         return;
     }
-    scene.attach(mop);
+
+    const obj = heldObject;
+    scene.attach(obj);
     grabbingController = null;
-    if (!spill) {
+    heldObject = null;
+
+    if (obj === mop) {
+        if (!spill) {
+            if (serveDone) {
+                feedback.innerHTML = "Spill cleared! Both training tasks done.";
+            } else {
+                feedback.innerHTML =
+                    "Spill cleared! Next: grab the <strong>plate</strong> onto the <strong>green mat</strong>.";
+            }
+            return;
+        }
+        feedback.innerHTML =
+            "Mop down — grab again if needed, or press <strong>C</strong> on desktop over the spill.";
         return;
     }
-    feedback.innerHTML =
-        "Grab the mop again if needed, or press <strong>C</strong> on desktop when the mop is over the spill.";
+
+    if (obj === plate) {
+        checkPlateServe();
+    }
 }
 
 function mopNearSpill(threshold) {
@@ -208,7 +303,14 @@ function tryCompleteSpill() {
     if (mopNearSpill(0.95)) {
         scene.remove(spill);
         spill = null;
-        feedback.innerHTML = "Good job! Spill cleaned safely.";
+        spillDone = true;
+        drawChecklist();
+        if (serveDone) {
+            feedback.innerHTML = "Good job! Spill cleaned. Both training tasks done.";
+        } else {
+            feedback.innerHTML =
+                "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
+        }
     }
 }
 
@@ -225,8 +327,15 @@ function cleanSpill() {
 
         scene.remove(spill);
         spill = null;
+        spillDone = true;
+        drawChecklist();
 
-        feedback.innerHTML = "Good job! Spill cleaned safely.";
+        if (serveDone) {
+            feedback.innerHTML = "Good job! Spill cleaned. Both training tasks done.";
+        } else {
+            feedback.innerHTML =
+                "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
+        }
 
     } else {
 
@@ -234,6 +343,92 @@ function cleanSpill() {
 
     }
 
+}
+
+function plateOnServeZone() {
+    plate.getWorldPosition(worldPlate);
+    return (
+        worldPlate.x > 0.04 &&
+        worldPlate.x < 0.66 &&
+        worldPlate.z > -2.32 &&
+        worldPlate.z < -1.78 &&
+        worldPlate.y > 0.65 &&
+        worldPlate.y < 1.15
+    );
+}
+
+function checkPlateServe() {
+    if (serveDone || !plate.userData.canGrab) {
+        return;
+    }
+
+    if (!plateOnServeZone()) {
+        feedback.innerHTML =
+            "Put the plate on the <strong>green mat</strong> on the table (not the floor).";
+        return;
+    }
+
+    plate.userData.canGrab = false;
+    serveDone = true;
+    plate.position.set(0.35, 0.72, -2.05);
+    plate.rotation.set(0, 0, 0);
+    drawChecklist();
+
+    if (spillDone) {
+        feedback.innerHTML = "Nice — food is on the table. Both training tasks done!";
+    } else {
+        feedback.innerHTML =
+            "Nice — food is on the table. When you can, clean the spill with the mop.";
+    }
+}
+
+function onCanvasPointerDown(event) {
+    if (renderer.xr.isPresenting || mouseThing) {
+        return;
+    }
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(grabList(), false);
+    if (hits.length > 0) {
+        mouseThing = hits[0].object;
+        renderer.domElement.setPointerCapture(event.pointerId);
+    }
+}
+
+function onCanvasPointerMove(event) {
+    if (!mouseThing || renderer.xr.isPresenting) {
+        return;
+    }
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const plane = mouseThing === plate ? planeCounter : planeTable;
+    if (raycaster.ray.intersectPlane(plane, dragPoint)) {
+        if (mouseThing === plate) {
+            const y = dragPoint.z < -2.35 ? 1.02 : 0.72;
+            mouseThing.position.set(dragPoint.x, y, dragPoint.z);
+        } else {
+            mouseThing.position.set(dragPoint.x, 0.85, dragPoint.z);
+        }
+    }
+}
+
+function onCanvasPointerUp(event) {
+    const wasDragging = mouseThing;
+    if (mouseThing === plate) {
+        checkPlateServe();
+    }
+    mouseThing = null;
+    if (wasDragging && event && event.pointerId != null) {
+        try {
+            renderer.domElement.releasePointerCapture(event.pointerId);
+        } catch (e) {
+            // ignore
+        }
+    }
 }
 
 
@@ -260,7 +455,10 @@ function animate() {
 
 function render() {
 
-    if (spill && grabbingController && mopNearSpill(0.95)) {
+    if (spill && grabbingController && heldObject === mop && mopNearSpill(0.95)) {
+        tryCompleteSpill();
+    }
+    if (spill && mouseThing === mop && mopNearSpill(0.95)) {
         tryCompleteSpill();
     }
 
