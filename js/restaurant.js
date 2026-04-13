@@ -1,6 +1,30 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/VRButton.js";
 
+// Guest dialogue — table 1 only (wrong order scenario)
+const SCENARIO_TABLE_1 = {
+    prompt:
+        "“Excuse me — I don't think this is what I ordered. What should you say?”",
+    choices: [
+        {
+            label: "“Not my problem — ask someone else.”",
+            ok: false,
+            note: "Too dismissive. Stay polite and take ownership, even if you get help after.",
+        },
+        {
+            label:
+                "“I'm sorry about the mix-up. I'll check with the kitchen and get you the right dish.”",
+            ok: true,
+            note: "Good — you apologize, verify with the kitchen, and fix the problem.",
+        },
+        {
+            label: "“Are you sure you ordered the right thing?”",
+            ok: false,
+            note: "Sounds accusatory. Start with empathy, then confirm the order calmly.",
+        },
+    ],
+};
+
 let scene, camera, renderer;
 let mop;
 let spill;
@@ -8,6 +32,10 @@ let plate;
 
 const feedback = document.getElementById("feedback");
 const tasksEl = document.getElementById("tasks");
+const dialoguePanel = document.getElementById("dialogue");
+const dialoguePrompt = document.getElementById("dialogue-prompt");
+const dialogueButtons = document.getElementById("dialogue-buttons");
+const dialogueResult = document.getElementById("dialogue-result");
 
 const raycaster = new THREE.Raycaster();
 const rotationMatrix = new THREE.Matrix4();
@@ -25,11 +53,42 @@ let heldObject = null;
 
 let spillDone = false;
 let serveDone = false;
+let talkDone = false;
+let guestPanelOpened = false;
 
 let mouseThing = null;
 
 init();
 animate();
+
+function buildGuest(gx, gz, shirtColor, skinColor) {
+    const guest = new THREE.Group();
+    guest.position.set(gx, 0, gz);
+    const capLen = 0.75;
+    const capR = 0.2;
+    const halfH = capLen / 2 + capR;
+    const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(capR, capLen, 6, 12),
+        new THREE.MeshStandardMaterial({ color: shirtColor })
+    );
+    body.position.y = halfH;
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 16, 12),
+        new THREE.MeshStandardMaterial({ color: skinColor })
+    );
+    head.position.set(0, halfH * 2 + 0.2, 0);
+    guest.add(body);
+    guest.add(head);
+    scene.add(guest);
+}
+
+function handsOnDone() {
+    return spillDone && serveDone;
+}
+
+function allTrainingDone() {
+    return spillDone && serveDone && talkDone;
+}
 
 function init() {
 
@@ -130,7 +189,7 @@ function init() {
 
 
 
-    /* TABLE */
+    /* TABLE 1 */
 
     const tableGeometry = new THREE.BoxGeometry(2, 0.2, 1);
     const tableMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
@@ -171,6 +230,10 @@ function init() {
         scene.add(leg);
     });
 
+    /* GUEST at table 1 (blue shirt) */
+
+    buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896);
+
     /* VR CONTROLLERS — grab mop or plate */
 
     for (let i = 0; i < 2; i++) {
@@ -193,12 +256,54 @@ function init() {
     canvas.addEventListener("pointerup", onCanvasPointerUp);
     canvas.addEventListener("pointercancel", onCanvasPointerUp);
 
+    setupGuestDialogueTable1();
     drawChecklist();
     feedback.innerHTML =
         "<strong>SafeServe XR</strong><br>" +
         "1) Grab the <strong>mop</strong>, wipe the spill, release.<br>" +
         "2) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong>.<br>" +
+        "3) Then answer the <strong>guest</strong> at table 1 (blue figure) in the panel top-right.<br>" +
         "VR: trigger to grab/release. Desktop: click-drag; spill: <strong>C</strong>.";
+}
+
+function setupGuestDialogueTable1() {
+    dialoguePrompt.textContent = SCENARIO_TABLE_1.prompt;
+    dialogueButtons.innerHTML = "";
+    dialogueResult.textContent = "";
+
+    for (let i = 0; i < SCENARIO_TABLE_1.choices.length; i++) {
+        const choice = SCENARIO_TABLE_1.choices[i];
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = choice.label;
+        btn.addEventListener("click", function () {
+            if (talkDone) {
+                return;
+            }
+            talkDone = true;
+            drawChecklist();
+            dialogueResult.textContent = choice.note;
+            dialogueResult.style.color = choice.ok ? "#1a6b1a" : "#8b4513";
+            const kids = dialogueButtons.children;
+            for (let j = 0; j < kids.length; j++) {
+                kids[j].disabled = true;
+            }
+            feedback.innerHTML =
+                "Training complete — spill, serve, and table 1 guest talk. Great work!";
+        });
+        dialogueButtons.appendChild(btn);
+    }
+}
+
+function maybeOpenGuestTalk() {
+    if (!handsOnDone() || talkDone || guestPanelOpened) {
+        return;
+    }
+    guestPanelOpened = true;
+    dialoguePanel.classList.remove("hidden");
+    dialogueResult.textContent = "";
+    feedback.innerHTML =
+        "Hands-on done. Answer the <strong>Guest — table 1</strong> in the panel (top right).";
 }
 
 function grabList() {
@@ -212,11 +317,21 @@ function grabList() {
 function drawChecklist() {
     const s = spillDone ? "Done" : "To do";
     const v = serveDone ? "Done" : "To do";
+    let g;
+    if (talkDone) {
+        g = "Done";
+    } else if (!handsOnDone()) {
+        g = "Locked (finish spill + serve)";
+    } else {
+        g = "To do";
+    }
     tasksEl.innerHTML =
         "<strong>Training checklist</strong><br>Clean spill: " +
         s +
         "<br>Serve guest: " +
-        v;
+        v +
+        "<br>Guest talk (table 1): " +
+        g;
 }
 
 function onWindowResize() {
@@ -269,8 +384,15 @@ function onSelectEnd(event) {
 
     if (obj === mop) {
         if (!spill) {
-            if (serveDone) {
-                feedback.innerHTML = "Spill cleared! Both training tasks done.";
+            if (allTrainingDone()) {
+                feedback.innerHTML = "Training complete — great work!";
+            } else if (handsOnDone() && !talkDone) {
+                maybeOpenGuestTalk();
+                feedback.innerHTML =
+                    "Spill cleared. Answer the <strong>Guest</strong> panel (top right).";
+            } else if (serveDone) {
+                feedback.innerHTML =
+                    "Spill cleared! Next: answer the <strong>Guest</strong> panel if you have not yet.";
             } else {
                 feedback.innerHTML =
                     "Spill cleared! Next: grab the <strong>plate</strong> onto the <strong>green mat</strong>.";
@@ -305,8 +427,13 @@ function tryCompleteSpill() {
         spill = null;
         spillDone = true;
         drawChecklist();
-        if (serveDone) {
-            feedback.innerHTML = "Good job! Spill cleaned. Both training tasks done.";
+        maybeOpenGuestTalk();
+        if (allTrainingDone()) {
+            feedback.innerHTML =
+                "Training complete — spill, serve, and table 1 guest talk. Great work!";
+        } else if (serveDone && !talkDone) {
+            feedback.innerHTML =
+                "Spill and serve done. Answer the <strong>Guest — table 1</strong> panel (top right).";
         } else {
             feedback.innerHTML =
                 "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
@@ -329,9 +456,14 @@ function cleanSpill() {
         spill = null;
         spillDone = true;
         drawChecklist();
+        maybeOpenGuestTalk();
 
-        if (serveDone) {
-            feedback.innerHTML = "Good job! Spill cleaned. Both training tasks done.";
+        if (allTrainingDone()) {
+            feedback.innerHTML =
+                "Training complete — spill, serve, and table 1 guest talk. Great work!";
+        } else if (serveDone && !talkDone) {
+            feedback.innerHTML =
+                "Spill and serve done. Answer the <strong>Guest — table 1</strong> panel (top right).";
         } else {
             feedback.innerHTML =
                 "Good job! Spill cleaned safely. Next: serve the plate on the green mat.";
@@ -373,9 +505,14 @@ function checkPlateServe() {
     plate.position.set(0.35, 0.72, -2.05);
     plate.rotation.set(0, 0, 0);
     drawChecklist();
+    maybeOpenGuestTalk();
 
-    if (spillDone) {
-        feedback.innerHTML = "Nice — food is on the table. Both training tasks done!";
+    if (allTrainingDone()) {
+        feedback.innerHTML =
+            "Training complete — spill, serve, and table 1 guest talk. Great work!";
+    } else if (spillDone && !talkDone) {
+        feedback.innerHTML =
+            "Spill and serve done. Answer the <strong>Guest — table 1</strong> panel (top right).";
     } else {
         feedback.innerHTML =
             "Nice — food is on the table. When you can, clean the spill with the mop.";

@@ -26,4 +26,68 @@ font-size:16px;
 border-radius:5px;
 max-width:min(92vw, 420px);
 line-height:1.45;
+z-index:2;
+}
+
+.dialogue{
+position:fixed;
+top:16px;
+right:16px;
+max-width:min(92vw, 340px);
+background:rgba(255,255,255,0.97);
+padding:12px 14px;
+font-family:Arial, sans-serif;
+font-size:14px;
+border-radius:8px;
+box-shadow:0 2px 10px rgba(0,0,0,0.15);
+line-height:1.45;
+z-index:3;
+}
+
+.dialogue.hidden{
+display:none;
+}
+
+.dialogue-title{
+margin:0 0 8px 0;
+font-size:15px;
+}
+
+.dialogue-prompt{
+margin:0 0 10px 0;
+}
+
+.dialogue-buttons{
+display:flex;
+flex-direction:column;
+gap:6px;
+}
+
+.dialogue-buttons button{
+font:inherit;
+padding:8px 10px;
+border-radius:6px;
+border:1px solid #ccc;
+background:#f7f7f7;
+cursor:pointer;
+text-align:left;
+}
+
+.dialogue-buttons button:hover:not(:disabled){
+background:#eaeaea;
+}
+
+.dialogue-buttons button:disabled{
+opacity:0.55;
+cursor:default;
+}
+
+.dialogue-result{
+margin:10px 0 0 0;
+font-weight:bold;
+min-height:1.2em;
+}
+
+.dialogue-footer{
+margin-top:10px;
 }
