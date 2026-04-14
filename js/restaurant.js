@@ -228,9 +228,19 @@ function init() {
     );
     renderer.xr.addEventListener("sessionstart", function () {
         document.body.classList.add("xr-mode");
+        dialoguePanel.classList.add("hidden");
+        if (serveDone && !allTalksDone()) {
+            setTimeout(function () {
+                startVrDialogueFromNext();
+            }, 120);
+        }
     });
     renderer.xr.addEventListener("sessionend", function () {
         document.body.classList.remove("xr-mode");
+        if (guestPanelOpened && !allTalksDone()) {
+            dialoguePanel.classList.remove("hidden");
+            loadScenario(nextPendingScenarioIndex());
+        }
     });
 
     window.addEventListener("resize", onWindowResize);
@@ -422,11 +432,94 @@ function loadScenario(index) {
     }
 }
 
+function inVrMode() {
+    return !!(renderer && renderer.xr && renderer.xr.isPresenting);
+}
+
+function nextPendingScenarioIndex() {
+    for (let i = 0; i < SCENARIOS.length; i++) {
+        if (!scenarioDone[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function runVrScenario(index) {
+    if (!inVrMode() || index < 0 || index >= SCENARIOS.length || scenarioDone[index]) {
+        return;
+    }
+    if (index > 0 && !spillDone) {
+        return;
+    }
+
+    const sc = SCENARIOS[index];
+    let promptText = "Guest, table " + (index + 1) + "\n\n" + sc.prompt + "\n\n";
+    for (let i = 0; i < sc.choices.length; i++) {
+        promptText += (i + 1) + ") " + sc.choices[i].label + "\n\n";
+    }
+    promptText += "Type 1, 2, or 3.";
+
+    const raw = window.prompt(promptText, "1");
+    if (raw === null) {
+        feedback.innerHTML = "VR dialogue paused. Start again from the same customer.";
+        return;
+    }
+
+    const pick = Number(raw.trim()) - 1;
+    if (!Number.isInteger(pick) || pick < 0 || pick >= sc.choices.length) {
+        window.alert("Please type 1, 2, or 3.");
+        runVrScenario(index);
+        return;
+    }
+
+    const choice = sc.choices[pick];
+    scenarioDone[index] = true;
+    drawChecklist();
+
+    if (choice.ok && index === 1 && guestByTable[1]) {
+        startGuestJump(guestByTable[1]);
+    }
+
+    window.alert(choice.note);
+
+    if (index === 0 && !spillDone) {
+        feedback.innerHTML =
+            "Table 1 done. Clean the <strong>spill</strong> with the mop, then table 2 will open in VR.";
+        return;
+    }
+
+    if (index === 1) {
+        feedback.innerHTML =
+            "Table 2 done. Table 3 is next, answer it now in VR.";
+        runVrScenario(2);
+        return;
+    }
+
+    if (index === 2 && allTrainingDone()) {
+        feedback.innerHTML =
+            "Training complete, serve, guest talks, and spill cleanup. Great work!";
+    }
+}
+
+function startVrDialogueFromNext() {
+    const index = nextPendingScenarioIndex();
+    if (index >= 0) {
+        runVrScenario(index);
+    }
+}
+
 function maybeOpenGuestTalk() {
     if (!serveDone || allTalksDone() || guestPanelOpened) {
         return;
     }
     guestPanelOpened = true;
+    if (inVrMode()) {
+        feedback.innerHTML =
+            "VR customer talk is open. Pick an answer in the prompt window.";
+        startVrDialogueFromNext();
+        return;
+    }
     dialoguePanel.classList.remove("hidden");
     loadScenario(0);
     feedback.innerHTML =
@@ -571,6 +664,9 @@ function spillClearedFeedback() {
             "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
     } else {
         feedback.innerHTML = "Good job! Spill cleaned safely.";
+    }
+    if (inVrMode() && !allTalksDone()) {
+        startVrDialogueFromNext();
     }
 }
 
