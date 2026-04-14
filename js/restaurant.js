@@ -1,7 +1,6 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/VRButton.js";
 
-// Guest dialogues, table 1 wrong order, table 2 allergy, table 3 wait and cold food
 const SCENARIOS = [
     {
         prompt:
@@ -71,11 +70,6 @@ const SCENARIOS = [
     },
 ];
 
-const GUEST_TALK_COUNT = 3;
-
-const MOP_SHAFT_LEN = 1.75;
-const MOP_HANDLE_CENTER_Y = MOP_SHAFT_LEN / 2 + 0.04;
-
 let scene, camera, renderer;
 let mop;
 let spill;
@@ -90,6 +84,7 @@ const dialoguePrompt = document.getElementById("dialogue-prompt");
 const dialogueButtons = document.getElementById("dialogue-buttons");
 const dialogueResult = document.getElementById("dialogue-result");
 const dialogueFooter = document.getElementById("dialogue-footer");
+const hudOverlay = document.getElementById("hud");
 
 const raycaster = new THREE.Raycaster();
 const rotationMatrix = new THREE.Matrix4();
@@ -188,10 +183,6 @@ function buildGuest(gx, gz, shirtColor, skinColor) {
     return guest;
 }
 
-function mopIsAvailable() {
-    return !!spill && scenarioDone[0];
-}
-
 function allTalksDone() {
     return scenarioDone[0] && scenarioDone[1] && scenarioDone[2];
 }
@@ -202,7 +193,7 @@ function allTrainingDone() {
 
 function countTalksDone() {
     let n = 0;
-    for (let i = 0; i < GUEST_TALK_COUNT; i++) {
+    for (let i = 0; i < 3; i++) {
         if (scenarioDone[i]) {
             n++;
         }
@@ -211,9 +202,6 @@ function countTalksDone() {
 }
 
 function init() {
-
-    /*  SCENE SETUP  */
-
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
 
@@ -232,18 +220,23 @@ function init() {
     renderer.xr.enabled = true;
 
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(VRButton.createButton(renderer));
+    document.body.appendChild(
+        VRButton.createButton(renderer, {
+            optionalFeatures: ["dom-overlay"],
+            domOverlay: hudOverlay ? { root: hudOverlay } : undefined,
+        })
+    );
+    renderer.xr.addEventListener("sessionstart", function () {
+        document.body.classList.add("xr-mode");
+    });
+    renderer.xr.addEventListener("sessionend", function () {
+        document.body.classList.remove("xr-mode");
+    });
 
     window.addEventListener("resize", onWindowResize);
 
-    /* LIGHT */
-
     const light = new THREE.HemisphereLight(0xffffff, 0x444444, 2);
     scene.add(light);
-
-
-
-    /* FLOOR */
 
     const floorGeometry = new THREE.PlaneGeometry(10, 10);
     const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x999999 });
@@ -253,10 +246,6 @@ function init() {
 
     scene.add(floor);
 
-
-
-    /* RESTAURANT COUNTER */
-
     const counterGeometry = new THREE.BoxGeometry(3, 1, 1);
     const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
 
@@ -264,10 +253,6 @@ function init() {
     counter.position.set(0, 0.5, -3);
 
     scene.add(counter);
-
-
-
-    /* SPILL HAZARD */
 
     const spillGeometry = new THREE.CircleGeometry(0.5, 32);
 
@@ -281,33 +266,13 @@ function init() {
 
     scene.add(spill);
 
-
-
-    /* MOP: thick yellow shaft only (easy to ray-hit in VR); origin at shaft center */
-
-    mop = new THREE.Group();
-
-    const shaftLen = MOP_SHAFT_LEN;
-    const shaftGeo = new THREE.CylinderGeometry(0.12, 0.14, shaftLen, 16);
-    const shaftMat = new THREE.MeshStandardMaterial({
-        color: 0xffee44,
-        emissive: 0xcc9900,
-        emissiveIntensity: 0.55,
-        roughness: 0.4,
-    });
-    const shaft = new THREE.Mesh(shaftGeo, shaftMat);
-    shaft.userData.grabRoot = mop;
-
-    mop.add(shaft);
-
-    /* By the service counter, near table 1 / first guest (counter center z -3, table z -2) */
-    mop.position.set(1.35, MOP_HANDLE_CENTER_Y, -2.28);
-
+    const mopGeo = new THREE.CylinderGeometry(0.12, 0.14, 1.75, 16);
+    mop = new THREE.Mesh(
+        mopGeo,
+        new THREE.MeshStandardMaterial({ color: 0xffee44, roughness: 0.5 })
+    );
+    mop.position.set(1.35, 1.75 / 2 + 0.04, -2.28);
     scene.add(mop);
-
-
-
-    /* PLATE (pick up from counter, place on green mat, table 1 only) */
 
     const plateGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.04, 32);
     const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xf5f5f0 });
@@ -317,11 +282,7 @@ function init() {
     plate.userData.canGrab = true;
     scene.add(plate);
 
-
-
     const wood = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-
-    /* TABLE 1 + placemat */
 
     buildTable(0, -2, wood);
 
@@ -334,18 +295,22 @@ function init() {
     });
     const placemat = new THREE.Mesh(matGeometry, matMaterial);
     placemat.rotation.x = -Math.PI / 2;
-    placemat.position.set(0.35, 0.701, -2.05);
+    placemat.position.set(-0.45, 0.701, -1.72);
     scene.add(placemat);
 
-    /* TABLE 2 */
+    const table1Cup = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.068, 0.056, 0.11, 20),
+        new THREE.MeshStandardMaterial({ color: 0xc41e1e })
+    );
+    table1Cup.position.set(0.68, 0.718, -1.46);
+    table1Cup.rotation.x = Math.PI / 2.12;
+    table1Cup.rotation.y = -0.38;
+    table1Cup.rotation.z = 0.06;
+    scene.add(table1Cup);
 
     buildTable(-3.2, 0.6, wood);
-
-    /* TABLE 3 */
-
     buildTable(3.2, 0.6, wood);
 
-    /* Plate on table 3 (set dressing, not grabbable) */
     table3Plate = new THREE.Mesh(
         new THREE.CylinderGeometry(0.22, 0.22, 0.04, 32),
         new THREE.MeshStandardMaterial({ color: 0xf5f5f0 })
@@ -354,14 +319,9 @@ function init() {
     table3Plate.rotation.y = 0.15;
     scene.add(table3Plate);
 
-    /* Guests (table 2 pink guest jumps when you pick the best answer there) */
-
-    guestByTable.length = 0;
     guestByTable.push(buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896));
     guestByTable.push(buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574));
     guestByTable.push(buildGuest(4.05, 0.85, 0x228866, 0xc9a686));
-
-    /* VR CONTROLLERS, grab mop or plate */
 
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
@@ -375,8 +335,6 @@ function init() {
         scene.add(controller);
     }
 
-    /* MOUSE DRAG (desktop only, when not in VR) */
-
     const canvas = renderer.domElement;
     canvas.addEventListener("pointerdown", onCanvasPointerDown);
     canvas.addEventListener("pointermove", onCanvasPointerMove);
@@ -386,7 +344,7 @@ function init() {
     drawChecklist();
     feedback.innerHTML =
         "<strong>SafeServe XR</strong><br>" +
-        "1) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> (center table).<br>" +
+        "1) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> by table 1 (blue guest).<br>" +
         "2) Use the <strong>Guest</strong> panel (top right) for <strong>table 1</strong> (blue shirt), then clean the <strong>spill</strong> with the <strong>mop</strong> by the counter.<br>" +
         "3) In the Guest panel, <strong>Next customer</strong> for tables 2 and 3 (pink jumps on the best allergy answer at table 2).<br>" +
         "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong> when the mop is over the spill.";
@@ -477,7 +435,7 @@ function maybeOpenGuestTalk() {
 
 function grabList() {
     const list = [];
-    if (mopIsAvailable()) {
+    if (spill && scenarioDone[0]) {
         list.push(mop);
     }
     if (plate.userData.canGrab) {
@@ -510,7 +468,7 @@ function drawChecklist() {
     const t2 = scenarioDone[1] ? "Done" : "To do";
     const t3 = scenarioDone[2] ? "Done" : "To do";
     tasksEl.innerHTML =
-        "<strong>Training checklist</strong><br>Serve (center table): " +
+        "<strong>Training checklist</strong><br>Serve (table 1): " +
         v +
         "<br>Clean spill: " +
         s +
@@ -544,13 +502,13 @@ function onSelectStart(event) {
     }
 
     controllerRay(controller);
-    const hits = raycaster.intersectObjects(grabList(), true);
+    const hits = raycaster.intersectObjects(grabList(), false);
     hits.sort((a, b) => a.distance - b.distance);
     if (hits.length === 0) {
         return;
     }
 
-    const obj = hits[0].object.userData.grabRoot ?? hits[0].object;
+    const obj = hits[0].object;
     controller.attach(obj);
     heldObject = obj;
     grabbingController = controller;
@@ -604,74 +562,56 @@ function mopNearSpill(threshold) {
     return worldMop.distanceTo(worldSpill) < threshold;
 }
 
-function tryCompleteSpill() {
-    if (!spill) {
-        return;
-    }
-    if (mopNearSpill(0.95)) {
-        scene.remove(spill);
-        spill = null;
-        spillDone = true;
-        drawChecklist();
-        if (allTrainingDone()) {
-            feedback.innerHTML =
-                "Training complete, serve, guest talks, and spill cleanup. Great work!";
-        } else if (!allTalksDone()) {
-            feedback.innerHTML =
-                "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
-        } else {
-            feedback.innerHTML = "Good job! Spill cleaned safely.";
-        }
+function spillClearedFeedback() {
+    if (allTrainingDone()) {
+        feedback.innerHTML =
+            "Training complete, serve, guest talks, and spill cleanup. Great work!";
+    } else if (!allTalksDone()) {
+        feedback.innerHTML =
+            "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
+    } else {
+        feedback.innerHTML = "Good job! Spill cleaned safely.";
     }
 }
 
-
-/* CLEAN SPILL FUNCTION */
+function tryCompleteSpill() {
+    if (!spill || !mopNearSpill(0.95)) {
+        return;
+    }
+    scene.remove(spill);
+    spill = null;
+    spillDone = true;
+    drawChecklist();
+    spillClearedFeedback();
+}
 
 function cleanSpill() {
-
     if (!spill) {
         return;
     }
-
     if (!scenarioDone[0]) {
         feedback.innerHTML =
             "Finish <strong>Guest, table 1</strong> in the panel first, then you can clean the spill.";
         return;
     }
-
-    if (mopNearSpill(1)) {
-
-        scene.remove(spill);
-        spill = null;
-        spillDone = true;
-        drawChecklist();
-
-        if (allTrainingDone()) {
-            feedback.innerHTML =
-                "Training complete, serve, guest talks, and spill cleanup. Great work!";
-        } else if (!allTalksDone()) {
-            feedback.innerHTML =
-                "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
-        } else {
-            feedback.innerHTML = "Good job! Spill cleaned safely.";
-        }
-
-    } else {
-
+    if (!mopNearSpill(1)) {
         feedback.innerHTML = "Move the mop closer to the spill.";
-
+        return;
     }
-
+    scene.remove(spill);
+    spill = null;
+    spillDone = true;
+    drawChecklist();
+    spillClearedFeedback();
 }
 
 function plateOnServeZone() {
     plate.getWorldPosition(worldPlate);
     return (
-        worldPlate.x > 0.04 &&
-        worldPlate.x < 0.66 &&
-        worldPlate.z > -2.32 &&
-        worldPlate.z < -1.78 &&
+        worldPlate.x > -0.82 &&
+        worldPlate.x < -0.08 &&
+        worldPlate.z > -2.05 &&
+        worldPlate.z < -1.44 &&
         worldPlate.y > 0.65 &&
         worldPlate.y < 1.15
     );
@@ -684,13 +624,13 @@ function checkPlateServe() {
 
     if (!plateOnServeZone()) {
         feedback.innerHTML =
-            "Put the plate on the <strong>green mat</strong> on the center table.";
+            "Put the plate on the <strong>green mat</strong> by table 1.";
         return;
     }
 
     plate.userData.canGrab = false;
     serveDone = true;
-    plate.position.set(0.35, 0.72, -2.05);
+    plate.position.set(-0.45, 0.72, -1.72);
     plate.rotation.set(0, 0, 0);
     drawChecklist();
     maybeOpenGuestTalk();
@@ -712,9 +652,9 @@ function onCanvasPointerDown(event) {
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(grabList(), true);
+    const hits = raycaster.intersectObjects(grabList(), false);
     if (hits.length > 0) {
-        mouseThing = hits[0].object.userData.grabRoot ?? hits[0].object;
+        mouseThing = hits[0].object;
         renderer.domElement.setPointerCapture(event.pointerId);
     }
 }
@@ -733,7 +673,7 @@ function onCanvasPointerMove(event) {
             const y = dragPoint.z < -2.35 ? 1.02 : 0.72;
             mouseThing.position.set(dragPoint.x, y, dragPoint.z);
         } else {
-            mouseThing.position.set(dragPoint.x, MOP_HANDLE_CENTER_Y, dragPoint.z);
+            mouseThing.position.set(dragPoint.x, 1.75 / 2 + 0.04, dragPoint.z);
         }
     }
 }
@@ -754,25 +694,14 @@ function onCanvasPointerUp(event) {
 }
 
 
-/* KEYBOARD CONTROL */
-
-window.addEventListener("keydown", function(event) {
-
+window.addEventListener("keydown", function (event) {
     if (event.key === "c") {
-
         cleanSpill();
-
     }
-
 });
 
-
-/* ANIMATION LOOP */
-
 function animate() {
-
     renderer.setAnimationLoop(render);
-
 }
 
 function render() {

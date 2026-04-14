@@ -1,6 +1,17 @@
 body{margin:0;}
 canvas{display:block;}
 
+#hud{
+position:fixed;
+inset:0;
+pointer-events:none;
+z-index:20;
+}
+
+#hud > *{
+pointer-events:auto;
+}
+
 #tasks{
 position:fixed;
 top:16px;
@@ -104,4 +115,27 @@ width:100%;
 
 .dialogue-footer button:hover{
 background:#dde4ff;
+}
+
+body.xr-mode #tasks,
+body.xr-mode #feedback{
+font-size:18px;
+line-height:1.5;
+}
+
+body.xr-mode .dialogue{
+font-size:18px;
+line-height:1.5;
+max-width:min(95vw, 520px);
+padding:16px 18px;
+}
+
+body.xr-mode .dialogue-title{
+font-size:20px;
+}
+
+body.xr-mode .dialogue-buttons button,
+body.xr-mode .dialogue-footer button{
+padding:12px 14px;
+font-size:18px;
 }
