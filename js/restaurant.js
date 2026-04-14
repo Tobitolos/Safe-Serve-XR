@@ -229,11 +229,6 @@ function init() {
     renderer.xr.addEventListener("sessionstart", function () {
         document.body.classList.add("xr-mode");
         dialoguePanel.classList.add("hidden");
-        if (serveDone && !allTalksDone()) {
-            setTimeout(function () {
-                startVrDialogueFromNext();
-            }, 120);
-        }
     });
     renderer.xr.addEventListener("sessionend", function () {
         document.body.classList.remove("xr-mode");
@@ -626,6 +621,9 @@ function onSelectEnd(event) {
 
     if (obj === mop) {
         if (!spill) {
+            if (inVrMode() && !allTalksDone()) {
+                startVrDialogueFromNext();
+            }
             if (allTrainingDone()) {
                 feedback.innerHTML = "Training complete, great work!";
             } else if (!allTalksDone()) {
@@ -665,9 +663,6 @@ function spillClearedFeedback() {
     } else {
         feedback.innerHTML = "Good job! Spill cleaned safely.";
     }
-    if (inVrMode() && !allTalksDone()) {
-        startVrDialogueFromNext();
-    }
 }
 
 function tryCompleteSpill() {
@@ -699,6 +694,9 @@ function cleanSpill() {
     spillDone = true;
     drawChecklist();
     spillClearedFeedback();
+    if (inVrMode() && !allTalksDone()) {
+        startVrDialogueFromNext();
+    }
 }
 
 function plateOnServeZone() {
