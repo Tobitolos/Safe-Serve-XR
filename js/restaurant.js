@@ -1,6 +1,7 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/VRButton.js";
 
+// Questions and answer options for each customer table.
 const SCENARIOS = [
     {
         prompt:
@@ -74,17 +75,10 @@ let scene, camera, renderer;
 let mop;
 let spill;
 let plate;
-let table3Plate;
 
+// Small HTML boxes used for status and checklist text.
 const feedback = document.getElementById("feedback");
 const tasksEl = document.getElementById("tasks");
-const dialoguePanel = document.getElementById("dialogue");
-const dialogueTitle = document.getElementById("dialogue-title");
-const dialoguePrompt = document.getElementById("dialogue-prompt");
-const dialogueButtons = document.getElementById("dialogue-buttons");
-const dialogueResult = document.getElementById("dialogue-result");
-const dialogueFooter = document.getElementById("dialogue-footer");
-const hudOverlay = document.getElementById("hud");
 
 const raycaster = new THREE.Raycaster();
 const rotationMatrix = new THREE.Matrix4();
@@ -124,9 +118,11 @@ let vrSelectedChoice = -1;
 let vrHoveredTarget = null;
 let vrPointerDot = null;
 
+// Start app.
 init();
 animate();
 
+// Makes the pink guest hop when the right answer is chosen.
 function startGuestJump(guestGroup) {
     if (!guestGroup) {
         return;
@@ -175,6 +171,7 @@ function buildTable(tx, tz, woodMat) {
     }
 }
 
+// Builds a simple guest body + head.
 function buildGuest(gx, gz, shirtColor, skinColor) {
     const guest = new THREE.Group();
     guest.position.set(gx, 0, gz);
@@ -206,29 +203,7 @@ function allTrainingDone() {
 }
 
 function countTalksDone() {
-    let n = 0;
-    for (let i = 0; i < 3; i++) {
-        if (scenarioDone[i]) {
-            n++;
-        }
-    }
-    return n;
-}
-
-function nextScenarioToShow() {
-    if (!scenarioDone[0]) {
-        return 0;
-    }
-    if (!spillDone) {
-        return 0;
-    }
-    if (!scenarioDone[1]) {
-        return 1;
-    }
-    if (!scenarioDone[2]) {
-        return 2;
-    }
-    return -1;
+    return Number(scenarioDone[0]) + Number(scenarioDone[1]) + Number(scenarioDone[2]);
 }
 
 function wrapCanvasText(ctx, text, x, startY, maxWidth, lineHeight) {
@@ -257,6 +232,7 @@ function wrapCanvasText(ctx, text, x, startY, maxWidth, lineHeight) {
     }
 }
 
+// Creates a card (plane + canvas texture) for VR text UI.
 function makeVrTextCard(width, height, fontSize) {
     const canvas = document.createElement("canvas");
     canvas.width = 1024;
@@ -272,6 +248,7 @@ function makeVrTextCard(width, height, fontSize) {
     return mesh;
 }
 
+// Draws text and background color on one VR card.
 function setVrTextCard(mesh, text, bgColor, textColor) {
     if (!mesh || !mesh.userData || !mesh.userData.ctx) {
         return;
@@ -289,6 +266,7 @@ function setVrTextCard(mesh, text, bgColor, textColor) {
     mesh.userData.texture.needsUpdate = true;
 }
 
+// Builds the floating VR dialogue panel with question, choices, and next button.
 function createVrDialogue() {
     vrDialogue = new THREE.Group();
     vrDialogue.visible = false;
@@ -329,6 +307,7 @@ function createVrDialogue() {
     scene.add(vrDialogue);
 }
 
+// Small center dot to help aiming in VR.
 function createVrPointerDot() {
     vrPointerDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.008, 10, 8),
@@ -338,6 +317,7 @@ function createVrPointerDot() {
     scene.add(vrPointerDot);
 }
 
+// Keep the center dot visible only in VR mode.
 function updateVrPointerDot() {
     if (!vrPointerDot) {
         return;
@@ -352,6 +332,7 @@ function updateVrPointerDot() {
     vrPointerDot.visible = true;
 }
 
+// Keep the VR dialogue panel in front of the camera.
 function updateVrDialoguePose() {
     if (!vrDialogue || !vrDialogue.visible || !renderer.xr.isPresenting) {
         return;
@@ -363,6 +344,7 @@ function updateVrDialoguePose() {
     vrDialogue.quaternion.copy(camera.quaternion);
 }
 
+// Repaints button colors for normal, hover, lock, and selected states.
 function refreshVrInteractionCards() {
     if (!vrDialogue || !vrDialogue.visible || vrCurrentScenario < 0) {
         return;
@@ -403,6 +385,7 @@ function refreshVrInteractionCards() {
     }
 }
 
+// Loads one customer scenario onto the VR panel.
 function showVrScenario(index) {
     if (!vrDialogue || index < 0 || index >= SCENARIOS.length) {
         return;
@@ -424,6 +407,7 @@ function showVrScenario(index) {
     updateVrDialoguePose();
 }
 
+// Controls when "Next customer" is visible and clickable.
 function updateVrNextButton() {
     if (!vrNextMesh || !vrDialogue || !vrDialogue.visible || vrCurrentScenario < 0) {
         return;
@@ -443,6 +427,7 @@ function updateVrNextButton() {
     vrNextMesh.visible = false;
 }
 
+// Handles answer click in VR and updates feedback/checklist.
 function onVrChoicePicked(choiceIndex) {
     if (!vrDialogue || !vrDialogue.visible || vrChoiceLocked || vrCurrentScenario < 0) {
         return;
@@ -481,6 +466,7 @@ function onVrChoicePicked(choiceIndex) {
     updateVrNextButton();
 }
 
+// Opens the next table on VR panel.
 function onVrNextPicked() {
     if (!vrNextMesh || !vrNextMesh.visible || !vrNextMesh.userData.enabled) {
         feedback.innerHTML = "Finish required task first before moving to the next customer.";
@@ -494,7 +480,15 @@ function onVrNextPicked() {
     showVrScenario(next);
 }
 
-function vrPickables() {
+// Reads controller rays each frame to highlight hovered VR button.
+function updateVrHover() {
+    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
+        if (vrHoveredTarget) {
+            vrHoveredTarget = null;
+            refreshVrInteractionCards();
+        }
+        return;
+    }
     const pickables = [];
     for (let i = 0; i < vrChoiceMeshes.length; i++) {
         if (vrChoiceMeshes[i].visible) {
@@ -504,37 +498,18 @@ function vrPickables() {
     if (vrNextMesh && vrNextMesh.visible) {
         pickables.push(vrNextMesh);
     }
-    return pickables;
-}
-
-function findVrUiTargetFromController(controller, pickables) {
-    controllerRay(controller);
-    const hits = raycaster.intersectObjects(pickables, false);
-    if (hits.length === 0) {
-        return null;
-    }
-    return hits[0];
-}
-
-function updateVrHover() {
-    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
-        if (vrHoveredTarget) {
-            vrHoveredTarget = null;
-            refreshVrInteractionCards();
-        }
-        return;
-    }
-    const pickables = vrPickables();
     if (pickables.length === 0) {
         return;
     }
     let bestHit = null;
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
-        const hit = findVrUiTargetFromController(controller, pickables);
-        if (!hit) {
+        controllerRay(controller);
+        const hits = raycaster.intersectObjects(pickables, false);
+        if (hits.length === 0) {
             continue;
         }
+        const hit = hits[0];
         if (!bestHit || hit.distance < bestHit.distance) {
             bestHit = hit;
         }
@@ -546,18 +521,29 @@ function updateVrHover() {
     }
 }
 
+// Uses current controller click to select a VR panel button.
 function handleVrUiSelect(controller) {
     if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
         return false;
     }
-    const pickables = vrPickables();
+    const pickables = [];
+    for (let i = 0; i < vrChoiceMeshes.length; i++) {
+        if (vrChoiceMeshes[i].visible) {
+            pickables.push(vrChoiceMeshes[i]);
+        }
+    }
+    if (vrNextMesh && vrNextMesh.visible) {
+        pickables.push(vrNextMesh);
+    }
     if (pickables.length === 0) {
         return false;
     }
-    const hit = findVrUiTargetFromController(controller, pickables);
-    if (!hit) {
+    controllerRay(controller);
+    const hits = raycaster.intersectObjects(pickables, false);
+    if (hits.length === 0) {
         return false;
     }
+    const hit = hits[0];
     const target = hit.object;
     if (target.userData.vrKind === "choice") {
         onVrChoicePicked(target.userData.choiceIndex);
@@ -571,6 +557,7 @@ function handleVrUiSelect(controller) {
 }
 
 function init() {
+    // Basic scene, camera, renderer.
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
 
@@ -589,27 +576,18 @@ function init() {
     renderer.xr.enabled = true;
 
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(
-        VRButton.createButton(renderer, {
-            optionalFeatures: ["dom-overlay"],
-            domOverlay: hudOverlay ? { root: hudOverlay } : undefined,
-        })
-    );
+    document.body.appendChild(VRButton.createButton(renderer));
+    // Enter/exit VR style and restore the correct panel state.
     renderer.xr.addEventListener("sessionstart", function () {
         document.body.classList.add("xr-mode");
         if (guestPanelOpened && !allTalksDone()) {
-            dialoguePanel.classList.add("hidden");
-            showVrScenario(nextScenarioToShow());
+            showVrScenario(!scenarioDone[0] || !spillDone ? 0 : !scenarioDone[1] ? 1 : 2);
         }
     });
     renderer.xr.addEventListener("sessionend", function () {
         document.body.classList.remove("xr-mode");
         if (vrDialogue) {
             vrDialogue.visible = false;
-        }
-        if (guestPanelOpened && !allTalksDone()) {
-            dialoguePanel.classList.remove("hidden");
-            loadScenario(nextScenarioToShow());
         }
     });
 
@@ -691,7 +669,7 @@ function init() {
     buildTable(-3.2, 0.6, wood);
     buildTable(3.2, 0.6, wood);
 
-    table3Plate = new THREE.Mesh(
+    const table3Plate = new THREE.Mesh(
         new THREE.CylinderGeometry(0.22, 0.22, 0.04, 32),
         new THREE.MeshStandardMaterial({ color: 0xf5f5f0 })
     );
@@ -705,6 +683,7 @@ function init() {
     createVrDialogue();
     createVrPointerDot();
 
+    // Add both VR controllers and their pointer lines.
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
         const lineGeo = new THREE.BufferGeometry().setFromPoints([
@@ -717,6 +696,7 @@ function init() {
         scene.add(controller);
     }
 
+    // Desktop mouse dragging support (non-VR).
     const canvas = renderer.domElement;
     canvas.addEventListener("pointerdown", onCanvasPointerDown);
     canvas.addEventListener("pointermove", onCanvasPointerMove);
@@ -727,81 +707,9 @@ function init() {
     feedback.innerHTML =
         "<strong>SafeServe XR</strong><br>" +
         "1) Grab the <strong>plate</strong>, put it on the <strong>green mat</strong> by table 1 (blue guest).<br>" +
-        "2) Use the <strong>Guest</strong> panel (top right) for <strong>table 1</strong> (blue shirt), then clean the <strong>spill</strong> with the <strong>mop</strong> by the counter.<br>" +
-        "3) In the Guest panel, <strong>Next customer</strong> for tables 2 and 3 (pink jumps on the best allergy answer at table 2).<br>" +
+        "2) In <strong>VR mode</strong>, answer <strong>table 1</strong> on the floating customer panel, then clean the <strong>spill</strong> with the <strong>mop</strong> by the counter.<br>" +
+        "3) Still in VR, use <strong>Next customer</strong> for tables 2 and 3 (pink jumps on the best allergy answer at table 2).<br>" +
         "VR: trigger to grab and release. Desktop: click, drag; spill: <strong>C</strong> when the mop is over the spill.";
-}
-
-function loadScenario(index) {
-    if (index < 0 || index >= SCENARIOS.length) {
-        return;
-    }
-    const sc = SCENARIOS[index];
-
-    dialogueTitle.textContent = "Guest, table " + (index + 1);
-    dialoguePrompt.textContent = sc.prompt;
-    dialogueButtons.innerHTML = "";
-    dialogueFooter.innerHTML = "";
-    dialogueResult.textContent = "";
-    dialogueResult.style.color = "#000";
-
-    for (let i = 0; i < sc.choices.length; i++) {
-        const choice = sc.choices[i];
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = choice.label;
-        const idx = index;
-        btn.addEventListener("click", function () {
-            if (scenarioDone[idx]) {
-                return;
-            }
-            scenarioDone[idx] = true;
-            drawChecklist();
-
-            dialogueResult.textContent = choice.note;
-            dialogueResult.style.color = choice.ok ? "#1a6b1a" : "#8b4513";
-
-            const kids = dialogueButtons.children;
-            for (let j = 0; j < kids.length; j++) {
-                kids[j].disabled = true;
-            }
-
-            if (choice.ok && idx === 1 && guestByTable[1]) {
-                startGuestJump(guestByTable[1]);
-            }
-
-            if (idx < SCENARIOS.length - 1) {
-                const nextBtn = document.createElement("button");
-                nextBtn.type = "button";
-                nextBtn.textContent = "Next customer (table " + (idx + 2) + ")";
-                nextBtn.addEventListener("click", function () {
-                    if (idx === 0 && !spillDone) {
-                        feedback.innerHTML =
-                            "Clean the <strong>spill</strong> with the mop first, then tap <strong>Next customer</strong> again for table 2.";
-                        return;
-                    }
-                    dialogueFooter.innerHTML = "";
-                    loadScenario(idx + 1);
-                });
-                dialogueFooter.appendChild(nextBtn);
-                if (idx === 0) {
-                    feedback.innerHTML =
-                        "Table 1 done. Clean the <strong>spill</strong> with the mop, then tap <strong>Next customer</strong> for table 2 (pink shirt).";
-                } else {
-                    feedback.innerHTML =
-                        "Table 2 done. Click <strong>Next customer</strong> for table 3 (green shirt).";
-                }
-            } else {
-                const p = document.createElement("p");
-                p.style.margin = "0";
-                p.textContent = "You helped all three tables.";
-                dialogueFooter.appendChild(p);
-                feedback.innerHTML =
-                    "Training complete, serve, guest talks, and spill cleanup. Great work!";
-            }
-        });
-        dialogueButtons.appendChild(btn);
-    }
 }
 
 function maybeOpenGuestTalk() {
@@ -809,19 +717,17 @@ function maybeOpenGuestTalk() {
         return;
     }
     guestPanelOpened = true;
-    if (renderer.xr.isPresenting) {
-        dialoguePanel.classList.add("hidden");
-        showVrScenario(0);
+    if (!renderer.xr.isPresenting) {
         feedback.innerHTML =
-            "Answer customer questions in VR by pointing at choices and pressing trigger.";
+            "Enter <strong>VR mode</strong> to answer customer questions with your controllers.";
         return;
     }
-    dialoguePanel.classList.remove("hidden");
-    loadScenario(0);
+    showVrScenario(0);
     feedback.innerHTML =
-        "Answer <strong>Guest, table 1</strong>, then clean the <strong>spill</strong> with the mop. After that, use <strong>Next customer</strong> for tables 2 and 3.";
+        "Answer <strong>Guest, table 1</strong> in VR, then clean the <strong>spill</strong> with the mop. After that, use <strong>Next customer</strong> in VR.";
 }
 
+// Items that can be grabbed right now.
 function grabList() {
     const list = [];
     if (spill && scenarioDone[0]) {
@@ -833,6 +739,7 @@ function grabList() {
     return list;
 }
 
+// Updates checklist text in the top-left box.
 function drawChecklist() {
     let s;
     if (spillDone) {
@@ -884,6 +791,7 @@ function controllerRay(controller) {
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotationMatrix);
 }
 
+// Trigger press: first try VR UI click, else try grabbing objects.
 function onSelectStart(event) {
     const controller = event.target;
     if (handleVrUiSelect(controller)) {
@@ -912,6 +820,7 @@ function onSelectStart(event) {
     }
 }
 
+// Trigger release: drop object and run result checks.
 function onSelectEnd(event) {
     const controller = event.target;
     if (controller !== grabbingController || !heldObject) {
@@ -929,7 +838,7 @@ function onSelectEnd(event) {
                 feedback.innerHTML = "Training complete, great work!";
             } else if (!allTalksDone()) {
                 feedback.innerHTML =
-                    "Spill cleared. In the <strong>Guest</strong> panel, tap <strong>Next customer</strong> for table 2 when you are ready.";
+                    "Spill cleared. In VR, use <strong>Next customer</strong> for table 2 when ready.";
             } else {
                 feedback.innerHTML = "Spill cleared.";
             }
@@ -945,6 +854,7 @@ function onSelectEnd(event) {
     }
 }
 
+// Checks if mop is close enough to the spill to clean it.
 function mopNearSpill(threshold) {
     if (!spill) {
         return false;
@@ -954,19 +864,21 @@ function mopNearSpill(threshold) {
     return worldMop.distanceTo(worldSpill) < threshold;
 }
 
+// Shared messages after the spill is cleaned.
 function spillClearedFeedback() {
     if (allTrainingDone()) {
         feedback.innerHTML =
             "Training complete, serve, guest talks, and spill cleanup. Great work!";
     } else if (!allTalksDone()) {
         feedback.innerHTML =
-            "Spill cleared. In the <strong>Guest</strong> panel, use <strong>Next customer</strong> for table 2.";
+            "Spill cleared. In VR, use <strong>Next customer</strong> for table 2.";
     } else {
         feedback.innerHTML = "Good job! Spill cleaned safely.";
     }
     updateVrNextButton();
 }
 
+// Auto-cleans when mop is moved over the spill in grab mode.
 function tryCompleteSpill() {
     if (!spill || !mopNearSpill(0.95)) {
         return;
@@ -978,6 +890,7 @@ function tryCompleteSpill() {
     spillClearedFeedback();
 }
 
+// Keyboard fallback for desktop users.
 function cleanSpill() {
     if (!spill) {
         return;
@@ -998,6 +911,7 @@ function cleanSpill() {
     spillClearedFeedback();
 }
 
+// Serve zone check for the green mat on table 1.
 function plateOnServeZone() {
     plate.getWorldPosition(worldPlate);
     return (
@@ -1010,6 +924,7 @@ function plateOnServeZone() {
     );
 }
 
+// Locks serving once plate is correctly placed.
 function checkPlateServe() {
     if (serveDone || !plate.userData.canGrab) {
         return;
@@ -1052,6 +967,7 @@ function onCanvasPointerDown(event) {
     }
 }
 
+// Drag objects on a flat plane in desktop mode.
 function onCanvasPointerMove(event) {
     if (!mouseThing || renderer.xr.isPresenting) {
         return;
@@ -1097,6 +1013,7 @@ function animate() {
     renderer.setAnimationLoop(render);
 }
 
+// Main frame loop.
 function render() {
 
     if (spill && grabbingController && heldObject === mop && mopNearSpill(0.95)) {
