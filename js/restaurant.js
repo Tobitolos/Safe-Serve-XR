@@ -111,6 +111,8 @@ const clock = new THREE.Clock();
 let guestJumpAnim = null;
 const vrPanelPos = new THREE.Vector3();
 const vrPanelDir = new THREE.Vector3();
+const vrDotPos = new THREE.Vector3();
+const vrDotDir = new THREE.Vector3();
 let vrDialogue = null;
 let vrChoiceMeshes = [];
 let vrNextMesh = null;
@@ -118,6 +120,9 @@ let vrQuestionMesh = null;
 let vrResultMesh = null;
 let vrCurrentScenario = -1;
 let vrChoiceLocked = false;
+let vrSelectedChoice = -1;
+let vrHoveredTarget = null;
+let vrPointerDot = null;
 
 init();
 animate();
@@ -302,7 +307,7 @@ function createVrDialogue() {
 
     vrChoiceMeshes = [];
     for (let i = 0; i < 3; i++) {
-        const btn = makeVrTextCard(2.1, 0.46, 34);
+        const btn = makeVrTextCard(2.1, 0.46, 38);
         btn.position.y = 0.34 - i * 0.54;
         btn.userData.vrKind = "choice";
         btn.userData.choiceIndex = i;
@@ -314,7 +319,7 @@ function createVrDialogue() {
     vrResultMesh.position.y = -1.30;
     vrDialogue.add(vrResultMesh);
 
-    vrNextMesh = makeVrTextCard(2.1, 0.34, 34);
+    vrNextMesh = makeVrTextCard(2.1, 0.34, 38);
     vrNextMesh.position.y = -1.73;
     vrNextMesh.userData.vrKind = "next";
     vrNextMesh.userData.enabled = false;
@@ -322,6 +327,29 @@ function createVrDialogue() {
     vrDialogue.add(vrNextMesh);
 
     scene.add(vrDialogue);
+}
+
+function createVrPointerDot() {
+    vrPointerDot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.008, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    vrPointerDot.visible = false;
+    scene.add(vrPointerDot);
+}
+
+function updateVrPointerDot() {
+    if (!vrPointerDot) {
+        return;
+    }
+    if (!renderer.xr.isPresenting) {
+        vrPointerDot.visible = false;
+        return;
+    }
+    camera.getWorldPosition(vrDotPos);
+    camera.getWorldDirection(vrDotDir);
+    vrPointerDot.position.copy(vrDotPos).add(vrDotDir.multiplyScalar(0.9));
+    vrPointerDot.visible = true;
 }
 
 function updateVrDialoguePose() {
@@ -335,6 +363,46 @@ function updateVrDialoguePose() {
     vrDialogue.quaternion.copy(camera.quaternion);
 }
 
+function refreshVrInteractionCards() {
+    if (!vrDialogue || !vrDialogue.visible || vrCurrentScenario < 0) {
+        return;
+    }
+    const sc = SCENARIOS[vrCurrentScenario];
+    for (let i = 0; i < vrChoiceMeshes.length; i++) {
+        if (!vrChoiceMeshes[i].visible || !sc.choices[i]) {
+            continue;
+        }
+        let bg = "#f2f5ff";
+        if (vrChoiceLocked) {
+            bg = i === vrSelectedChoice ? "#c9f0cb" : "#dddddd";
+        } else if (
+            vrHoveredTarget &&
+            vrHoveredTarget.userData &&
+            vrHoveredTarget.userData.vrKind === "choice" &&
+            vrHoveredTarget.userData.choiceIndex === i
+        ) {
+            bg = "#bcd7ff";
+        }
+        setVrTextCard(vrChoiceMeshes[i], (i + 1) + ") " + sc.choices[i].label, bg, "#111111");
+    }
+
+    if (vrNextMesh && vrNextMesh.visible) {
+        let bg = vrNextMesh.userData.enabled ? "#204070" : "#5b1f1f";
+        if (
+            vrNextMesh.userData.enabled &&
+            vrHoveredTarget &&
+            vrHoveredTarget.userData &&
+            vrHoveredTarget.userData.vrKind === "next"
+        ) {
+            bg = "#2f66b8";
+        }
+        const text = vrNextMesh.userData.enabled
+            ? "Next customer (table " + (vrCurrentScenario + 2) + ")"
+            : "Clean spill first to unlock table 2";
+        setVrTextCard(vrNextMesh, text, bg, "#ffffff");
+    }
+}
+
 function showVrScenario(index) {
     if (!vrDialogue || index < 0 || index >= SCENARIOS.length) {
         return;
@@ -342,6 +410,8 @@ function showVrScenario(index) {
     const sc = SCENARIOS[index];
     vrCurrentScenario = index;
     vrChoiceLocked = false;
+    vrSelectedChoice = -1;
+    vrHoveredTarget = null;
     vrDialogue.visible = true;
     setVrTextCard(vrQuestionMesh, "Guest, table " + (index + 1) + "\n" + sc.prompt, "#1d2333", "#ffffff");
     for (let i = 0; i < vrChoiceMeshes.length; i++) {
@@ -361,18 +431,13 @@ function updateVrNextButton() {
     if (vrCurrentScenario === 0 && scenarioDone[0] && !spillDone) {
         vrNextMesh.visible = true;
         vrNextMesh.userData.enabled = false;
-        setVrTextCard(vrNextMesh, "Clean spill first to unlock table 2", "#5b1f1f", "#ffffff");
+        refreshVrInteractionCards();
         return;
     }
     if (vrCurrentScenario < SCENARIOS.length - 1 && scenarioDone[vrCurrentScenario]) {
         vrNextMesh.visible = true;
         vrNextMesh.userData.enabled = true;
-        setVrTextCard(
-            vrNextMesh,
-            "Next customer (table " + (vrCurrentScenario + 2) + ")",
-            "#204070",
-            "#ffffff"
-        );
+        refreshVrInteractionCards();
         return;
     }
     vrNextMesh.visible = false;
@@ -387,6 +452,7 @@ function onVrChoicePicked(choiceIndex) {
         return;
     }
     vrChoiceLocked = true;
+    vrSelectedChoice = choiceIndex;
     const choice = sc.choices[choiceIndex];
     scenarioDone[vrCurrentScenario] = true;
     drawChecklist();
@@ -395,11 +461,7 @@ function onVrChoicePicked(choiceIndex) {
         startGuestJump(guestByTable[1]);
     }
 
-    for (let i = 0; i < vrChoiceMeshes.length; i++) {
-        const base = i === choiceIndex ? "#c9f0cb" : "#dddddd";
-        const label = sc.choices[i] ? (i + 1) + ") " + sc.choices[i].label : "";
-        setVrTextCard(vrChoiceMeshes[i], label, base, "#111111");
-    }
+    refreshVrInteractionCards();
 
     setVrTextCard(vrResultMesh, choice.note, "#112211", "#d7ffd7");
 
@@ -432,11 +494,7 @@ function onVrNextPicked() {
     showVrScenario(next);
 }
 
-function handleVrUiSelect(controller) {
-    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
-        return false;
-    }
-    controllerRay(controller);
+function vrPickables() {
     const pickables = [];
     for (let i = 0; i < vrChoiceMeshes.length; i++) {
         if (vrChoiceMeshes[i].visible) {
@@ -446,14 +504,61 @@ function handleVrUiSelect(controller) {
     if (vrNextMesh && vrNextMesh.visible) {
         pickables.push(vrNextMesh);
     }
+    return pickables;
+}
+
+function findVrUiTargetFromController(controller, pickables) {
+    controllerRay(controller);
+    const hits = raycaster.intersectObjects(pickables, false);
+    if (hits.length === 0) {
+        return null;
+    }
+    return hits[0];
+}
+
+function updateVrHover() {
+    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
+        if (vrHoveredTarget) {
+            vrHoveredTarget = null;
+            refreshVrInteractionCards();
+        }
+        return;
+    }
+    const pickables = vrPickables();
+    if (pickables.length === 0) {
+        return;
+    }
+    let bestHit = null;
+    for (let i = 0; i < 2; i++) {
+        const controller = renderer.xr.getController(i);
+        const hit = findVrUiTargetFromController(controller, pickables);
+        if (!hit) {
+            continue;
+        }
+        if (!bestHit || hit.distance < bestHit.distance) {
+            bestHit = hit;
+        }
+    }
+    const nextHover = bestHit ? bestHit.object : null;
+    if (nextHover !== vrHoveredTarget) {
+        vrHoveredTarget = nextHover;
+        refreshVrInteractionCards();
+    }
+}
+
+function handleVrUiSelect(controller) {
+    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
+        return false;
+    }
+    const pickables = vrPickables();
     if (pickables.length === 0) {
         return false;
     }
-    const hits = raycaster.intersectObjects(pickables, false);
-    if (hits.length === 0) {
+    const hit = findVrUiTargetFromController(controller, pickables);
+    if (!hit) {
         return false;
     }
-    const target = hits[0].object;
+    const target = hit.object;
     if (target.userData.vrKind === "choice") {
         onVrChoicePicked(target.userData.choiceIndex);
         return true;
@@ -598,6 +703,7 @@ function init() {
     guestByTable.push(buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574));
     guestByTable.push(buildGuest(4.05, 0.85, 0x228866, 0xc9a686));
     createVrDialogue();
+    createVrPointerDot();
 
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
@@ -1000,7 +1106,9 @@ function render() {
         tryCompleteSpill();
     }
 
+    updateVrHover();
     updateVrDialoguePose();
+    updateVrPointerDot();
     updateGuestJump(clock.getDelta());
 
     renderer.render(scene, camera);
