@@ -109,6 +109,15 @@ let mouseThing = null;
 const guestByTable = [];
 const clock = new THREE.Clock();
 let guestJumpAnim = null;
+const vrPanelPos = new THREE.Vector3();
+const vrPanelDir = new THREE.Vector3();
+let vrDialogue = null;
+let vrChoiceMeshes = [];
+let vrNextMesh = null;
+let vrQuestionMesh = null;
+let vrResultMesh = null;
+let vrCurrentScenario = -1;
+let vrChoiceLocked = false;
 
 init();
 animate();
@@ -201,6 +210,261 @@ function countTalksDone() {
     return n;
 }
 
+function nextScenarioToShow() {
+    if (!scenarioDone[0]) {
+        return 0;
+    }
+    if (!spillDone) {
+        return 0;
+    }
+    if (!scenarioDone[1]) {
+        return 1;
+    }
+    if (!scenarioDone[2]) {
+        return 2;
+    }
+    return -1;
+}
+
+function wrapCanvasText(ctx, text, x, startY, maxWidth, lineHeight) {
+    const parts = String(text || "").split("\n");
+    let y = startY;
+    for (let p = 0; p < parts.length; p++) {
+        const words = parts[p].split(" ");
+        let line = "";
+        for (let i = 0; i < words.length; i++) {
+            const testLine = line ? line + " " + words[i] : words[i];
+            if (ctx.measureText(testLine).width > maxWidth && line) {
+                ctx.fillText(line, x, y);
+                y += lineHeight;
+                line = words[i];
+            } else {
+                line = testLine;
+            }
+        }
+        if (line) {
+            ctx.fillText(line, x, y);
+            y += lineHeight;
+        }
+        if (p < parts.length - 1) {
+            y += lineHeight * 0.4;
+        }
+    }
+}
+
+function makeVrTextCard(width, height, fontSize) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext("2d");
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+    mesh.userData.canvas = canvas;
+    mesh.userData.ctx = ctx;
+    mesh.userData.texture = texture;
+    mesh.userData.fontSize = fontSize;
+    return mesh;
+}
+
+function setVrTextCard(mesh, text, bgColor, textColor) {
+    if (!mesh || !mesh.userData || !mesh.userData.ctx) {
+        return;
+    }
+    const ctx = mesh.userData.ctx;
+    const canvas = mesh.userData.canvas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = textColor;
+    ctx.font = "bold " + mesh.userData.fontSize + "px Arial";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    wrapCanvasText(ctx, text, 26, 24, canvas.width - 52, mesh.userData.fontSize * 1.25);
+    mesh.userData.texture.needsUpdate = true;
+}
+
+function createVrDialogue() {
+    vrDialogue = new THREE.Group();
+    vrDialogue.visible = false;
+    vrDialogue.scale.setScalar(0.45);
+
+    const panelBg = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.3, 3.05),
+        new THREE.MeshBasicMaterial({ color: 0x101010, transparent: true, opacity: 0.78 })
+    );
+    panelBg.position.z = -0.02;
+    vrDialogue.add(panelBg);
+
+    vrQuestionMesh = makeVrTextCard(2.1, 0.85, 42);
+    vrQuestionMesh.position.y = 0.95;
+    vrDialogue.add(vrQuestionMesh);
+
+    vrChoiceMeshes = [];
+    for (let i = 0; i < 3; i++) {
+        const btn = makeVrTextCard(2.1, 0.46, 34);
+        btn.position.y = 0.34 - i * 0.54;
+        btn.userData.vrKind = "choice";
+        btn.userData.choiceIndex = i;
+        vrChoiceMeshes.push(btn);
+        vrDialogue.add(btn);
+    }
+
+    vrResultMesh = makeVrTextCard(2.1, 0.42, 32);
+    vrResultMesh.position.y = -1.30;
+    vrDialogue.add(vrResultMesh);
+
+    vrNextMesh = makeVrTextCard(2.1, 0.34, 34);
+    vrNextMesh.position.y = -1.73;
+    vrNextMesh.userData.vrKind = "next";
+    vrNextMesh.userData.enabled = false;
+    vrNextMesh.visible = false;
+    vrDialogue.add(vrNextMesh);
+
+    scene.add(vrDialogue);
+}
+
+function updateVrDialoguePose() {
+    if (!vrDialogue || !vrDialogue.visible || !renderer.xr.isPresenting) {
+        return;
+    }
+    camera.getWorldPosition(vrPanelPos);
+    camera.getWorldDirection(vrPanelDir);
+    vrDialogue.position.copy(vrPanelPos).add(vrPanelDir.multiplyScalar(1.8));
+    vrDialogue.position.y -= 0.15;
+    vrDialogue.quaternion.copy(camera.quaternion);
+}
+
+function showVrScenario(index) {
+    if (!vrDialogue || index < 0 || index >= SCENARIOS.length) {
+        return;
+    }
+    const sc = SCENARIOS[index];
+    vrCurrentScenario = index;
+    vrChoiceLocked = false;
+    vrDialogue.visible = true;
+    setVrTextCard(vrQuestionMesh, "Guest, table " + (index + 1) + "\n" + sc.prompt, "#1d2333", "#ffffff");
+    for (let i = 0; i < vrChoiceMeshes.length; i++) {
+        const label = sc.choices[i] ? (i + 1) + ") " + sc.choices[i].label : "";
+        setVrTextCard(vrChoiceMeshes[i], label, "#f2f5ff", "#111111");
+        vrChoiceMeshes[i].visible = !!sc.choices[i];
+    }
+    setVrTextCard(vrResultMesh, "Pick one answer with your controller trigger.", "#111111", "#e8e8e8");
+    vrNextMesh.visible = false;
+    updateVrDialoguePose();
+}
+
+function updateVrNextButton() {
+    if (!vrNextMesh || !vrDialogue || !vrDialogue.visible || vrCurrentScenario < 0) {
+        return;
+    }
+    if (vrCurrentScenario === 0 && scenarioDone[0] && !spillDone) {
+        vrNextMesh.visible = true;
+        vrNextMesh.userData.enabled = false;
+        setVrTextCard(vrNextMesh, "Clean spill first to unlock table 2", "#5b1f1f", "#ffffff");
+        return;
+    }
+    if (vrCurrentScenario < SCENARIOS.length - 1 && scenarioDone[vrCurrentScenario]) {
+        vrNextMesh.visible = true;
+        vrNextMesh.userData.enabled = true;
+        setVrTextCard(
+            vrNextMesh,
+            "Next customer (table " + (vrCurrentScenario + 2) + ")",
+            "#204070",
+            "#ffffff"
+        );
+        return;
+    }
+    vrNextMesh.visible = false;
+}
+
+function onVrChoicePicked(choiceIndex) {
+    if (!vrDialogue || !vrDialogue.visible || vrChoiceLocked || vrCurrentScenario < 0) {
+        return;
+    }
+    const sc = SCENARIOS[vrCurrentScenario];
+    if (!sc.choices[choiceIndex] || scenarioDone[vrCurrentScenario]) {
+        return;
+    }
+    vrChoiceLocked = true;
+    const choice = sc.choices[choiceIndex];
+    scenarioDone[vrCurrentScenario] = true;
+    drawChecklist();
+
+    if (choice.ok && vrCurrentScenario === 1 && guestByTable[1]) {
+        startGuestJump(guestByTable[1]);
+    }
+
+    for (let i = 0; i < vrChoiceMeshes.length; i++) {
+        const base = i === choiceIndex ? "#c9f0cb" : "#dddddd";
+        const label = sc.choices[i] ? (i + 1) + ") " + sc.choices[i].label : "";
+        setVrTextCard(vrChoiceMeshes[i], label, base, "#111111");
+    }
+
+    setVrTextCard(vrResultMesh, choice.note, "#112211", "#d7ffd7");
+
+    if (vrCurrentScenario < SCENARIOS.length - 1) {
+        if (vrCurrentScenario === 0) {
+            feedback.innerHTML =
+                "Table 1 done in VR. Clean the <strong>spill</strong> with the mop, then use <strong>Next customer</strong> in VR.";
+        } else {
+            feedback.innerHTML =
+                "Table 2 done in VR. Use <strong>Next customer</strong> in VR for table 3.";
+        }
+    } else {
+        feedback.innerHTML =
+            "You helped all three tables in VR. Finish remaining tasks if needed.";
+    }
+
+    updateVrNextButton();
+}
+
+function onVrNextPicked() {
+    if (!vrNextMesh || !vrNextMesh.visible || !vrNextMesh.userData.enabled) {
+        feedback.innerHTML = "Finish required task first before moving to the next customer.";
+        return;
+    }
+    const next = vrCurrentScenario + 1;
+    if (next >= SCENARIOS.length) {
+        vrDialogue.visible = false;
+        return;
+    }
+    showVrScenario(next);
+}
+
+function handleVrUiSelect(controller) {
+    if (!renderer.xr.isPresenting || !vrDialogue || !vrDialogue.visible) {
+        return false;
+    }
+    controllerRay(controller);
+    const pickables = [];
+    for (let i = 0; i < vrChoiceMeshes.length; i++) {
+        if (vrChoiceMeshes[i].visible) {
+            pickables.push(vrChoiceMeshes[i]);
+        }
+    }
+    if (vrNextMesh && vrNextMesh.visible) {
+        pickables.push(vrNextMesh);
+    }
+    if (pickables.length === 0) {
+        return false;
+    }
+    const hits = raycaster.intersectObjects(pickables, false);
+    if (hits.length === 0) {
+        return false;
+    }
+    const target = hits[0].object;
+    if (target.userData.vrKind === "choice") {
+        onVrChoicePicked(target.userData.choiceIndex);
+        return true;
+    }
+    if (target.userData.vrKind === "next") {
+        onVrNextPicked();
+        return true;
+    }
+    return false;
+}
+
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
@@ -228,13 +492,19 @@ function init() {
     );
     renderer.xr.addEventListener("sessionstart", function () {
         document.body.classList.add("xr-mode");
-        dialoguePanel.classList.add("hidden");
+        if (guestPanelOpened && !allTalksDone()) {
+            dialoguePanel.classList.add("hidden");
+            showVrScenario(nextScenarioToShow());
+        }
     });
     renderer.xr.addEventListener("sessionend", function () {
         document.body.classList.remove("xr-mode");
+        if (vrDialogue) {
+            vrDialogue.visible = false;
+        }
         if (guestPanelOpened && !allTalksDone()) {
             dialoguePanel.classList.remove("hidden");
-            loadScenario(nextPendingScenarioIndex());
+            loadScenario(nextScenarioToShow());
         }
     });
 
@@ -327,6 +597,7 @@ function init() {
     guestByTable.push(buildGuest(-0.95, -1.35, 0x3355aa, 0xe8b896));
     guestByTable.push(buildGuest(-4.05, 0.85, 0xaa3355, 0xd4a574));
     guestByTable.push(buildGuest(4.05, 0.85, 0x228866, 0xc9a686));
+    createVrDialogue();
 
     for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
@@ -427,92 +698,16 @@ function loadScenario(index) {
     }
 }
 
-function inVrMode() {
-    return !!(renderer && renderer.xr && renderer.xr.isPresenting);
-}
-
-function nextPendingScenarioIndex() {
-    for (let i = 0; i < SCENARIOS.length; i++) {
-        if (!scenarioDone[i]) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-function runVrScenario(index) {
-    if (!inVrMode() || index < 0 || index >= SCENARIOS.length || scenarioDone[index]) {
-        return;
-    }
-    if (index > 0 && !spillDone) {
-        return;
-    }
-
-    const sc = SCENARIOS[index];
-    let promptText = "Guest, table " + (index + 1) + "\n\n" + sc.prompt + "\n\n";
-    for (let i = 0; i < sc.choices.length; i++) {
-        promptText += (i + 1) + ") " + sc.choices[i].label + "\n\n";
-    }
-    promptText += "Type 1, 2, or 3.";
-
-    const raw = window.prompt(promptText, "1");
-    if (raw === null) {
-        feedback.innerHTML = "VR dialogue paused. Start again from the same customer.";
-        return;
-    }
-
-    const pick = Number(raw.trim()) - 1;
-    if (!Number.isInteger(pick) || pick < 0 || pick >= sc.choices.length) {
-        window.alert("Please type 1, 2, or 3.");
-        runVrScenario(index);
-        return;
-    }
-
-    const choice = sc.choices[pick];
-    scenarioDone[index] = true;
-    drawChecklist();
-
-    if (choice.ok && index === 1 && guestByTable[1]) {
-        startGuestJump(guestByTable[1]);
-    }
-
-    window.alert(choice.note);
-
-    if (index === 0 && !spillDone) {
-        feedback.innerHTML =
-            "Table 1 done. Clean the <strong>spill</strong> with the mop, then table 2 will open in VR.";
-        return;
-    }
-
-    if (index === 1) {
-        feedback.innerHTML =
-            "Table 2 done. Table 3 is next, answer it now in VR.";
-        runVrScenario(2);
-        return;
-    }
-
-    if (index === 2 && allTrainingDone()) {
-        feedback.innerHTML =
-            "Training complete, serve, guest talks, and spill cleanup. Great work!";
-    }
-}
-
-function startVrDialogueFromNext() {
-    const index = nextPendingScenarioIndex();
-    if (index >= 0) {
-        runVrScenario(index);
-    }
-}
-
 function maybeOpenGuestTalk() {
     if (!serveDone || allTalksDone() || guestPanelOpened) {
         return;
     }
     guestPanelOpened = true;
-    if (inVrMode()) {
+    if (renderer.xr.isPresenting) {
+        dialoguePanel.classList.add("hidden");
+        showVrScenario(0);
         feedback.innerHTML =
-            "VR customer talk is open. Pick an answer in the prompt window.";
-        startVrDialogueFromNext();
+            "Answer customer questions in VR by pointing at choices and pressing trigger.";
         return;
     }
     dialoguePanel.classList.remove("hidden");
@@ -585,6 +780,9 @@ function controllerRay(controller) {
 
 function onSelectStart(event) {
     const controller = event.target;
+    if (handleVrUiSelect(controller)) {
+        return;
+    }
     if (grabbingController || mouseThing) {
         return;
     }
@@ -621,9 +819,6 @@ function onSelectEnd(event) {
 
     if (obj === mop) {
         if (!spill) {
-            if (inVrMode() && !allTalksDone()) {
-                startVrDialogueFromNext();
-            }
             if (allTrainingDone()) {
                 feedback.innerHTML = "Training complete, great work!";
             } else if (!allTalksDone()) {
@@ -663,6 +858,7 @@ function spillClearedFeedback() {
     } else {
         feedback.innerHTML = "Good job! Spill cleaned safely.";
     }
+    updateVrNextButton();
 }
 
 function tryCompleteSpill() {
@@ -694,9 +890,6 @@ function cleanSpill() {
     spillDone = true;
     drawChecklist();
     spillClearedFeedback();
-    if (inVrMode() && !allTalksDone()) {
-        startVrDialogueFromNext();
-    }
 }
 
 function plateOnServeZone() {
@@ -807,6 +1000,7 @@ function render() {
         tryCompleteSpill();
     }
 
+    updateVrDialoguePose();
     updateGuestJump(clock.getDelta());
 
     renderer.render(scene, camera);
